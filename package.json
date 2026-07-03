@@ -1,6 +1,6 @@
 {
-  "name": "folder-compare",
-  "displayName": "FolderCompare",
+  "name": "batch-compare",
+  "displayName": "BatchCompare",
   "description": "Compare two folders side by side and diff their files",
   "version": "1.0.0",
   "publisher": "reingel",
@@ -16,29 +16,29 @@
   "contributes": {
     "commands": [
       {
-        "command": "folderCompare.compare",
-        "title": "Folder Compare"
+        "command": "batchCompare.compare",
+        "title": "Batch Compare"
       }
     ],
     "menus": {
       "explorer/context": [
         {
-          "command": "folderCompare.compare",
+          "command": "batchCompare.compare",
           "when": "explorerResourceIsFolder",
           "group": "3_compare"
         }
       ],
       "commandPalette": [
         {
-          "command": "folderCompare.compare",
+          "command": "batchCompare.compare",
           "when": "false"
         }
       ]
     },
     "configuration": {
-      "title": "FolderCompare",
+      "title": "BatchCompare",
       "properties": {
-        "folderCompare.exclude": {
+        "batchCompare.exclude": {
           "type": "array",
           "items": {
             "type": "string"
@@ -55,7 +55,8 @@
   "scripts": {
     "compile": "node esbuild.js",
     "watch": "node esbuild.js --watch",
-    "package": "npm run compile && vsce package --allow-missing-repository --skip-license"
+    "package": "npm run compile && vsce package --allow-missing-repository --skip-license",
+    "publish": "npm run compile && vsce publish --allow-missing-repository --skip-license"
   },
   "devDependencies": {
     "@types/node": "^20.0.0",

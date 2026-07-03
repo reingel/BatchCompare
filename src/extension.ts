@@ -5,7 +5,7 @@ import { createComparePanel } from './panel';
 export function activate(context: vscode.ExtensionContext): void {
   context.subscriptions.push(
     vscode.commands.registerCommand(
-      'folderCompare.compare',
+      'batchCompare.compare',
       async (_uri: vscode.Uri, uris?: vscode.Uri[]) => {
         const selected = uris && uris.length ? uris : _uri ? [_uri] : [];
 
@@ -30,7 +30,7 @@ export function activate(context: vscode.ExtensionContext): void {
           left = picked[0];
         } else {
           vscode.window.showWarningMessage(
-            'Folder Compare: select one or two folders in the Explorer.'
+            'Batch Compare: select one or two folders in the Explorer.'
           );
           return;
         }
@@ -40,13 +40,13 @@ export function activate(context: vscode.ExtensionContext): void {
         );
         if (stats.some((s) => s.type !== vscode.FileType.Directory)) {
           vscode.window.showWarningMessage(
-            'Folder Compare: both selected items must be folders.'
+            'Batch Compare: both selected items must be folders.'
           );
           return;
         }
 
         const exclude = vscode.workspace
-          .getConfiguration('folderCompare')
+          .getConfiguration('batchCompare')
           .get<string[]>('exclude', []);
 
         const tree = await vscode.window.withProgress(

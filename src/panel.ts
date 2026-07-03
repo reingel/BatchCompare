@@ -10,7 +10,7 @@ interface WebviewMessage {
 
 function getExclude(): string[] {
   return vscode.workspace
-    .getConfiguration('folderCompare')
+    .getConfiguration('batchCompare')
     .get<string[]>('exclude', []);
 }
 
@@ -24,7 +24,7 @@ export function createComparePanel(
   let rightRoot = initialRightRoot;
 
   const panel = vscode.window.createWebviewPanel(
-    'folderCompare',
+    'batchCompare',
     `${path.basename(leftRoot.fsPath)} ↔ ${path.basename(rightRoot.fsPath)}`,
     vscode.ViewColumn.Active,
     {
@@ -141,7 +141,7 @@ function getHtml(
         content="default-src 'none'; style-src ${webview.cspSource}; script-src 'nonce-${nonce}';">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <link href="${styleUri}" rel="stylesheet">
-  <title>Folder Compare</title>
+  <title>Batch Compare</title>
 </head>
 <body>
   <div id="top">

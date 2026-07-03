@@ -1,0 +1,235 @@
+:root {
+  --guide-w: 16px;
+  --row-h: 22px;
+  --guide-color: var(--vscode-tree-indentGuidesStroke, rgba(128, 128, 128, 0.4));
+}
+
+body {
+  padding: 0;
+  margin: 0;
+  font-family: var(--vscode-font-family);
+  font-size: var(--vscode-font-size);
+  color: var(--vscode-foreground);
+}
+
+#top {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: var(--vscode-editor-background);
+}
+
+#toolbar {
+  display: flex;
+  justify-content: flex-end;
+  gap: 4px;
+  padding: 4px 8px;
+  border-bottom: 1px solid var(--vscode-panel-border);
+}
+
+#toolbar button {
+  border: 1px solid var(--vscode-button-border, transparent);
+  background: var(--vscode-button-secondaryBackground, transparent);
+  color: var(--vscode-button-secondaryForeground, var(--vscode-foreground));
+  cursor: pointer;
+  font-size: var(--vscode-font-size);
+  padding: 2px 10px;
+  border-radius: 2px;
+}
+
+#toolbar button:hover {
+  background: var(--vscode-button-secondaryHoverBackground, var(--vscode-toolbar-hoverBackground));
+}
+
+#toolbar button.spinning {
+  animation: spin 0.8s linear infinite;
+  display: inline-block;
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+#header {
+  display: flex;
+  align-items: stretch;
+  border-bottom: 1px solid var(--vscode-panel-border);
+}
+
+.root-name {
+  flex: 1;
+  min-width: 0;
+  padding: 6px 8px;
+  font-weight: bold;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  direction: rtl;
+  text-align: left;
+  cursor: pointer;
+}
+
+.root-name:hover {
+  background: var(--vscode-list-hoverBackground);
+  text-decoration: underline;
+}
+
+/* 두 경로에서 서로 다른 부분을 강조 표시 */
+.path-diff {
+  background: var(--vscode-editor-findMatchHighlightBackground, rgba(255, 224, 130, 0.4));
+  color: var(--vscode-list-highlightForeground, inherit);
+  border-radius: 2px;
+}
+
+.row {
+  display: flex;
+  cursor: pointer;
+  line-height: var(--row-h);
+}
+
+.row:hover {
+  background: var(--vscode-list-hoverBackground);
+}
+
+/* 한 줄씩 건너뛰며 옅은 회색 배경으로 가독성을 높임 */
+.row.stripe {
+  background: rgba(128, 128, 128, 0.08);
+}
+
+.row.stripe:hover {
+  background: var(--vscode-list-hoverBackground);
+}
+
+/* 좌우 내용이 다른 파일은 배경색으로도 구분되게 강조 (줄무늬보다 우선) */
+.row.kind-file.status-modified {
+  background: var(--vscode-inputValidation-errorBackground, rgba(229, 20, 0, 0.15));
+}
+
+.row.kind-file.status-modified:hover {
+  background: var(--vscode-inputValidation-errorBorder, rgba(229, 20, 0, 0.25));
+}
+
+/* 한쪽에만 있는 파일도 배경색으로 구분되게 강조 */
+.row.kind-file.status-onlyLeft > .cell:first-child {
+  background: var(--vscode-diffEditor-removedLineBackground, rgba(229, 20, 0, 0.15));
+}
+
+.row.kind-file.status-onlyLeft:hover > .cell:first-child {
+  background: var(--vscode-diffEditor-removedTextBackground, rgba(229, 20, 0, 0.25));
+}
+
+.row.kind-file.status-onlyRight > .cell:last-child {
+  background: var(--vscode-diffEditor-insertedLineBackground, rgba(0, 170, 0, 0.15));
+}
+
+.row.kind-file.status-onlyRight:hover > .cell:last-child {
+  background: var(--vscode-diffEditor-insertedTextBackground, rgba(0, 170, 0, 0.25));
+}
+
+.cell {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: stretch;
+  white-space: nowrap;
+  overflow: hidden;
+  padding-right: 8px;
+}
+
+.cell.empty {
+  background: var(--vscode-diffEditor-unchangedRegionBackground, rgba(128, 128, 128, 0.07));
+}
+
+/* Tree guide columns */
+.guide {
+  position: relative;
+  flex: 0 0 auto;
+  width: var(--guide-w);
+  height: var(--row-h);
+}
+
+/* Elbow connector: vertical part */
+.guide.connector::before {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 0;
+  border-left: 1px solid var(--guide-color);
+}
+
+.guide.connector.tee::before {
+  bottom: 0;
+}
+
+.guide.connector.last::before {
+  height: 50%;
+}
+
+/* Elbow connector: horizontal part */
+.guide.connector::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  right: 2px;
+  top: 50%;
+  border-top: 1px solid var(--guide-color);
+}
+
+/* 반대쪽에만 존재하는 항목: 가지(ㅏ) 없이 세로선만 표시 */
+.guide.connector.noconnect::after {
+  content: none;
+}
+
+/* Expand/collapse chevron */
+.twistie {
+  flex: 0 0 auto;
+  width: var(--guide-w);
+  height: var(--row-h);
+  text-align: center;
+}
+
+.twistie.expandable::before {
+  content: '\276F';
+  display: inline-block;
+  font-size: 10px;
+  opacity: 0.8;
+  transition: transform 0.1s ease;
+}
+
+.node:not(.collapsed) > .row .twistie.expandable::before {
+  transform: rotate(90deg);
+}
+
+.label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.label.dir {
+  font-weight: 500;
+}
+
+.node.collapsed > .children {
+  display: none;
+}
+
+/* 좌우 내용이 다른 파일 강조 (확장자 색상보다 우선) */
+.label.diff {
+  color: var(--vscode-charts-red, #e51400) !important;
+  font-weight: 600;
+}
+
+/* 내용이 다른 폴더는 은은하게 표시 (자식에 diff 존재) */
+.status-modified > .cell .label.dir {
+  color: var(--vscode-gitDecoration-modifiedResourceForeground);
+}
+
+.status-onlyLeft > .cell:first-child .label {
+  color: var(--vscode-gitDecoration-deletedResourceForeground);
+}
+
+.status-onlyRight > .cell:last-child .label {
+  color: var(--vscode-gitDecoration-addedResourceForeground);
+}

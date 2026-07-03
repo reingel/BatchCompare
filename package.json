@@ -1,0 +1,67 @@
+{
+  "name": "folder-compare",
+  "displayName": "FolderCompare",
+  "description": "Compare two folders side by side and diff their files",
+  "version": "1.0.0",
+  "publisher": "reingel",
+  "license": "MIT",
+  "icon": "media/icon.png",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "folderCompare.compare",
+        "title": "Folder Compare"
+      }
+    ],
+    "menus": {
+      "explorer/context": [
+        {
+          "command": "folderCompare.compare",
+          "when": "explorerResourceIsFolder",
+          "group": "3_compare"
+        }
+      ],
+      "commandPalette": [
+        {
+          "command": "folderCompare.compare",
+          "when": "false"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "FolderCompare",
+      "properties": {
+        "folderCompare.exclude": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [
+            ".git",
+            "node_modules"
+          ],
+          "description": "Names of files or folders to exclude from comparison."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "compile": "node esbuild.js",
+    "watch": "node esbuild.js --watch",
+    "package": "npm run compile && vsce package --allow-missing-repository --skip-license"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@types/vscode": "^1.85.0",
+    "@vscode/vsce": "^3.0.0",
+    "esbuild": "^0.24.0",
+    "typescript": "^5.5.0"
+  }
+}

@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#1f6feb"/>
+      <stop offset="1" stop-color="#0b4a9e"/>
+    </linearGradient>
+  </defs>
+
+  <rect x="0" y="0" width="128" height="128" rx="24" fill="url(#bg)"/>
+
+  <!-- Left folder (unchanged side) -->
+  <g transform="translate(10,42)">
+    <path d="M0 8 a6 6 0 0 1 6-6 h12 l7 8 h17 a6 6 0 0 1 6 6 v32 a6 6 0 0 1 -6 6 h-36 a6 6 0 0 1 -6-6 z"
+          fill="#dbe4f0"/>
+  </g>
+
+  <!-- Right folder (changed side) -->
+  <g transform="translate(70,42)">
+    <path d="M0 8 a6 6 0 0 1 6-6 h12 l7 8 h17 a6 6 0 0 1 6 6 v32 a6 6 0 0 1 -6 6 h-36 a6 6 0 0 1 -6-6 z"
+          fill="#ffffff"/>
+  </g>
+
+  <!-- Compare arrows between the two folders -->
+  <g fill="#ffffff">
+    <path d="M58 58 l10 -9 v6 h6 v6 h-6 v6 z"/>
+    <path d="M70 76 l-10 9 v-6 h-6 v-6 h6 v-6 z"/>
+  </g>
+
+  <!-- Diff badge on the right folder -->
+  <circle cx="104" cy="44" r="13" fill="#e5484d" stroke="#0b4a9e" stroke-width="3"/>
+  <text x="104" y="50" font-family="Helvetica, Arial, sans-serif" font-size="18" font-weight="700"
+        text-anchor="middle" fill="#ffffff">!</text>
+</svg>

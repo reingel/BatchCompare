@@ -30,6 +30,10 @@ export function createComparePanel(
     {
       enableScripts: true,
       localResourceRoots: [vscode.Uri.joinPath(context.extensionUri, 'media')],
+      // Diff 보기를 열면 이 패널이 같은 편집기 그룹에서 잠시 가려지는데(hidden),
+      // 이 옵션이 없으면 vscode가 webview 내용을 폐기했다가 다시 보일 때 처음부터
+      // 재로드하여 사용자가 펼치거나 접은 트리 상태가 매번 초기화된다.
+      retainContextWhenHidden: true,
     }
   );
 

@@ -149,6 +149,18 @@ body {
   height: var(--row-h);
 }
 
+/* Ancestor indent guide: continuous vertical line for parent levels that
+   still have more siblings below (keeps the tree lines connected when a
+   descendant folder is expanded). */
+.guide.indent.line::before {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 0;
+  bottom: 0;
+  border-left: 1px solid var(--guide-color);
+}
+
 /* Elbow connector: vertical part */
 .guide.connector::before {
   content: '';
@@ -215,10 +227,15 @@ body {
   display: none;
 }
 
-/* 좌우 내용이 다른 파일 강조 (확장자 색상보다 우선) */
+/* 좌우 내용이 다른 파일 강조 */
 .label.diff {
   color: var(--vscode-charts-red, #e51400) !important;
   font-weight: 600;
+}
+
+/* 양쪽에 동일하게 존재하는 파일은 회색으로 옅게 표시하여 상이한 파일이 돋보이게 함 */
+.label.same {
+  color: var(--vscode-descriptionForeground, rgba(128, 128, 128, 0.8));
 }
 
 /* 내용이 다른 폴더는 은은하게 표시 (자식에 diff 존재) */

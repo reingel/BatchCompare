@@ -191,8 +191,11 @@
     if (hasChildren) {
       const childrenEl = document.createElement('div');
       childrenEl.className = 'children';
+      // 최상위(root) 항목은 자기 자신의 트위스티 앞에 안내선 칸이 없으므로,
+      // 그 자식들에게도 부모용 안내선 칸을 추가하지 않는다. 그래야 각 자식의
+      // 커넥터(꺾쇠)가 항상 부모의 트위스티(v) 바로 아래 위치에 오게 된다.
       const childAncestors =
-        (ancestorLines === null ? [] : ancestorLines).concat(!isLast);
+        ancestorLines === null ? [] : ancestorLines.concat(!isLast);
       for (let i = 0; i < node.children.length; i++) {
         const child = node.children[i];
         const childIsLast = i === node.children.length - 1;
@@ -267,39 +270,13 @@
         // 좌우 내용이 다른 파일은 빨간색으로 강조
         label.classList.add('diff');
       } else if (node.status === 'same') {
-        // 동일한 파일은 확장자별 색상으로 표시
-        const color = extColor(node.name);
-        if (color) {
-          label.style.color = color;
-        }
+        // 동일한 파일은 회색으로 옅게 표시하여 상이한 파일이 돋보이게 함
+        label.classList.add('same');
       }
     }
     cell.appendChild(label);
 
     return cell;
-  }
-
-  function hashHue(str) {
-    let h = 0;
-    for (let i = 0; i < str.length; i++) {
-      h = (h * 31 + str.charCodeAt(i)) >>> 0;
-    }
-    return h % 360;
-  }
-
-  function extColor(name) {
-    const dot = name.lastIndexOf('.');
-    if (dot <= 0) {
-      return null; // 확장자 없음 또는 dotfile
-    }
-    const ext = name.slice(dot + 1).toLowerCase();
-    const hue = hashHue(ext);
-    const isLight = document.body.classList.contains('vscode-light');
-    // 무채색(회색) 계열을 유지하면서 확장자별로 명도만 다르게 하여 구분한다.
-    const min = isLight ? 25 : 55;
-    const max = isLight ? 55 : 85;
-    const lightness = Math.round(min + (hue / 359) * (max - min));
-    return 'hsl(0, 0%, ' + lightness + '%)';
   }
 
   vscode.postMessage({ type: 'ready' });

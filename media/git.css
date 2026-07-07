@@ -1,0 +1,188 @@
+:root {
+  --row-h: 24px;
+}
+
+body {
+  padding: 0;
+  margin: 0;
+  font-family: var(--vscode-font-family);
+  font-size: var(--vscode-font-size);
+  color: var(--vscode-foreground);
+}
+
+#sticky-top {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: var(--vscode-editor-background);
+}
+
+#top {
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--vscode-panel-border);
+}
+
+#repo-path {
+  font-weight: bold;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  direction: rtl;
+  text-align: left;
+}
+
+#hint {
+  color: var(--vscode-descriptionForeground);
+  font-size: 0.9em;
+  margin-top: 2px;
+}
+
+#header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  line-height: 28px;
+  padding: 0 10px;
+  background: var(--vscode-editor-background);
+  border-bottom: 1px solid var(--vscode-panel-border);
+  font-weight: bold;
+  font-size: 0.9em;
+  color: var(--vscode-descriptionForeground);
+  white-space: nowrap;
+}
+
+.commit {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  line-height: var(--row-h);
+  padding: 0 10px;
+  cursor: default;
+  white-space: nowrap;
+}
+
+.commit:hover {
+  background: var(--vscode-list-hoverBackground);
+}
+
+/* 한 줄씩 건너뛰며 옅은 배경으로 가독성을 높임 */
+.commit.stripe {
+  background: rgba(128, 128, 128, 0.08);
+}
+
+.commit.stripe:hover {
+  background: var(--vscode-list-hoverBackground);
+}
+
+.commit.selected,
+.commit.selected:hover {
+  background: var(--vscode-list-activeSelectionBackground);
+  color: var(--vscode-list-activeSelectionForeground);
+}
+
+.commit.uncommitted .description {
+  font-weight: bold;
+}
+
+.cell {
+  flex: 0 0 auto;
+}
+
+.graph-cell {
+  flex: 0 0 auto;
+  height: var(--row-h);
+  display: flex;
+  align-items: center;
+}
+
+.graph-svg {
+  display: block;
+  overflow: visible;
+}
+
+.description {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.subject {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.subject.dim {
+  color: var(--vscode-descriptionForeground);
+}
+
+.commit.selected .subject.dim {
+  color: inherit;
+  opacity: 0.85;
+}
+
+.ref {
+  flex: 0 0 auto;
+  font-size: 0.85em;
+  padding: 0 6px;
+  border-radius: 8px;
+  line-height: 16px;
+  background: var(--vscode-badge-background);
+  color: var(--vscode-badge-foreground);
+}
+
+.ref.tag {
+  background: var(--vscode-charts-orange, #d18616);
+  color: var(--vscode-editor-background, #fff);
+}
+
+.date {
+  width: 130px;
+  color: var(--vscode-descriptionForeground);
+  font-family: var(--vscode-editor-font-family, monospace);
+  font-size: 0.9em;
+}
+
+.author {
+  width: 110px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--vscode-descriptionForeground);
+}
+
+.hash {
+  width: 70px;
+  font-family: var(--vscode-editor-font-family, monospace);
+  color: var(--vscode-charts-yellow, #b58900);
+}
+
+.commit.selected .hash,
+.commit.selected .date,
+.commit.selected .author {
+  color: inherit;
+  opacity: 0.85;
+}
+
+#load-more {
+  display: block;
+  margin: 8px auto 12px;
+  border: 1px solid var(--vscode-button-border, transparent);
+  background: var(--vscode-button-secondaryBackground, transparent);
+  color: var(--vscode-button-secondaryForeground, var(--vscode-foreground));
+  cursor: pointer;
+  font-size: var(--vscode-font-size);
+  padding: 4px 16px;
+  border-radius: 2px;
+}
+
+#load-more:hover {
+  background: var(--vscode-button-secondaryHoverBackground, var(--vscode-toolbar-hoverBackground));
+}
+
+#load-more[disabled] {
+  opacity: 0.6;
+  cursor: default;
+}

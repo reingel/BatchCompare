@@ -42,11 +42,7 @@ export async function getRepoRoot(dir: string): Promise<string | undefined> {
   }
 }
 
-export async function getCommits(
-  repoPath: string,
-  skip: number,
-  limit: number
-): Promise<GitCommit[]> {
+export async function getCommits(repoPath: string): Promise<GitCommit[]> {
   // \x1f(unit sep)로 필드를, \x1e(record sep)로 커밋을 구분하여
   // subject에 쉼표/개행이 있어도 안전하게 파싱한다.
   let out: string;
@@ -54,8 +50,6 @@ export async function getCommits(
     out = await runGit(repoPath, [
       'log',
       '--topo-order',
-      `--skip=${skip}`,
-      `--max-count=${limit}`,
       '--date=format:%Y-%m-%d %H:%M',
       '--pretty=format:%H\x1f%h\x1f%P\x1f%an\x1f%ad\x1f%D\x1f%s\x1e',
     ]);

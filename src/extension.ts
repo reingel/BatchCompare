@@ -65,50 +65,108 @@ export function activate(context: vscode.ExtensionContext): void {
   );
 
   context.subscriptions.push(
-    vscode.commands.registerCommand('batchCompare.gitCompare', async () => {
-      // 워크스페이스 폴더들에서 git 저장소 루트를 찾는다.
-      const folders = vscode.workspace.workspaceFolders ?? [];
-      const roots = new Set<string>();
-      for (const folder of folders) {
-        const root = await getRepoRoot(folder.uri.fsPath);
-        if (root) {
-          roots.add(root);
-        }
-      }
+    vscode.commands.registerCommand(
+      'batchCompare.gitCompare',
+      async (_uri: vscode.Uri, uris?: vscode.Uri[]) => {
+        const selected = uris && uris.length ? uris : _uri ? [_uri] : [];
 
-      let repoRoot: string | undefined;
-      if (roots.size === 1) {
-        repoRoot = [...roots][0];
-      } else if (roots.size > 1) {
-        repoRoot = await vscode.window.showQuickPick([...roots], {
-          title: 'Batch Compare: Select a git repository',
-        });
-      } else {
-        // 워크스페이스에 git 저장소가 없으면 다이얼로그로 선택받는다.
-        const picked = await vscode.window.showOpenDialog({
-          canSelectFolders: true,
-          canSelectFiles: false,
-          canSelectMany: false,
-          openLabel: 'Select Git Repository',
-          title: 'Select a git repository folder',
-        });
-        if (!picked || picked.length === 0) {
-          return;
-        }
-        repoRoot = await getRepoRoot(picked[0].fsPath);
-        if (!repoRoot) {
+        const resolveRepo = async (uri: vscode.Uri): Promise<string | undefined> => {
+          const stat = await vscode.workspace.fs.stat(uri);
+          if (stat.type !== vscode.FileType.Directory) {
+            return undefined;
+          }
+          return getRepoRoot(uri.fsPath);
+        };
+
+        let repoRoots: string[];
+        if (selected.length === 2) {
+          // 탐색기에서 두 폴더를 Ctrl/Cmd+Click으로 선택한 경우: 그대로 좌우 저장소로 사용한다.
+          const [rootA, rootB] = await Promise.all(selected.map(resolveRepo));
+          if (!rootA || !rootB) {
+            vscode.window.showWarningMessage(
+              'Batch Compare: both selected folders must be inside a git repository.'
+            );
+            return;
+          }
+          repoRoots = [rootA, rootB];
+        } else if (selected.length === 1) {
+          // 폴더 하나만 선택한 경우: 선택한 저장소를 우측에 두고, 좌측 저장소는 다이얼로그로 선택받는다.
+          const right = await resolveRepo(selected[0]);
+          if (!right) {
+            vscode.window.showWarningMessage(
+              'Batch Compare: the selected folder is not a git repository.'
+            );
+            return;
+          }
+          const picked = await vscode.window.showOpenDialog({
+            canSelectFolders: true,
+            canSelectFiles: false,
+            canSelectMany: false,
+            openLabel: 'Select as Left Repository',
+            title: 'Select the left git repository to compare against',
+          });
+          if (!picked || picked.length === 0) {
+            return;
+          }
+          const left = await getRepoRoot(picked[0].fsPath);
+          if (!left) {
+            vscode.window.showWarningMessage(
+              'Batch Compare: the selected folder is not a git repository.'
+            );
+            return;
+          }
+          repoRoots = [left, right];
+        } else if (selected.length === 0) {
+          // 커맨드 팔레트 등 탐색기 선택 없이 호출된 경우: 워크스페이스에서 저장소를 찾는다.
+          const folders = vscode.workspace.workspaceFolders ?? [];
+          const roots = new Set<string>();
+          for (const folder of folders) {
+            const root = await getRepoRoot(folder.uri.fsPath);
+            if (root) {
+              roots.add(root);
+            }
+          }
+
+          let repoRoot: string | undefined;
+          if (roots.size === 1) {
+            repoRoot = [...roots][0];
+          } else if (roots.size > 1) {
+            repoRoot = await vscode.window.showQuickPick([...roots], {
+              title: 'Batch Compare: Select a git repository',
+            });
+          } else {
+            const picked = await vscode.window.showOpenDialog({
+              canSelectFolders: true,
+              canSelectFiles: false,
+              canSelectMany: false,
+              openLabel: 'Select Git Repository',
+              title: 'Select a git repository folder',
+            });
+            if (!picked || picked.length === 0) {
+              return;
+            }
+            repoRoot = await getRepoRoot(picked[0].fsPath);
+            if (!repoRoot) {
+              vscode.window.showWarningMessage(
+                'Batch Compare: the selected folder is not a git repository.'
+              );
+              return;
+            }
+          }
+          if (!repoRoot) {
+            return;
+          }
+          repoRoots = [repoRoot];
+        } else {
           vscode.window.showWarningMessage(
-            'Batch Compare: the selected folder is not a git repository.'
+            'Batch Compare: select one or two folders in the Explorer.'
           );
           return;
         }
-      }
-      if (!repoRoot) {
-        return;
-      }
 
-      createGitHistoryPanel(context, repoRoot);
-    })
+        createGitHistoryPanel(context, repoRoots);
+      }
+    )
   );
 }
 

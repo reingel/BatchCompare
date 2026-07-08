@@ -14,43 +14,20 @@
     'var(--vscode-charts-yellow, #cca700)',
   ];
 
-  /** @type {Array<any>} */
-  let commits = [];
-  /** @type {string[]} 선택된 커밋 해시 (최대 2개, 선택한 순서 유지) */
-  let selected = [];
-  let maxColumn = 0;
+  /** @type {Array<{index:number, repoPath:string, commits:any[], selected:string[], anchorIndex:number|null, commitsEl?:HTMLElement}>} */
+  let panels = [];
 
-  const commitsEl = document.getElementById('commits');
-  const repoPathEl = document.getElementById('repo-path');
-  const loadMoreBtn = document.getElementById('load-more');
-  const graphColEl = document.getElementById('graph-col-header');
+  const panelsEl = document.getElementById('panels');
 
   window.addEventListener('message', (event) => {
     const message = event.data;
-    if (message.type === 'commits') {
-      commits = message.append ? commits.concat(message.commits) : message.commits;
-      if (repoPathEl) {
-        repoPathEl.textContent = message.repoPath;
-      }
-      if (loadMoreBtn) {
-        loadMoreBtn.hidden = !message.hasMore;
-        loadMoreBtn.textContent = 'Load More';
-        loadMoreBtn.removeAttribute('disabled');
-      }
-      recomputeMaxColumn();
-      render();
+    if (message.type === 'init') {
+      panels = message.repos.map((r) => ({ ...r, selected: [], anchorIndex: null }));
+      renderAll();
     }
   });
 
-  if (loadMoreBtn) {
-    loadMoreBtn.addEventListener('click', () => {
-      loadMoreBtn.textContent = 'Loading...';
-      loadMoreBtn.setAttribute('disabled', '');
-      vscode.postMessage({ type: 'loadMore' });
-    });
-  }
-
-  function recomputeMaxColumn() {
+  function graphWidth(commits) {
     let max = 0;
     for (const c of commits) {
       max = Math.max(max, c.graph.column);
@@ -58,30 +35,80 @@
         max = Math.max(max, t.x0, t.x1);
       }
     }
-    maxColumn = max;
-  }
-
-  function graphWidth() {
-    return LANE_PAD * 2 + (maxColumn + 1) * LANE_W;
-  }
-
-  function render() {
-    if (!commitsEl) {
-      return;
-    }
-    const width = graphWidth();
-    if (graphColEl) {
-      graphColEl.style.width = width + 'px';
-    }
-    commitsEl.textContent = '';
-    for (let i = 0; i < commits.length; i++) {
-      commitsEl.appendChild(renderCommit(commits[i], i, width));
-    }
-    updateSelection();
+    return LANE_PAD * 2 + (max + 1) * LANE_W;
   }
 
   function laneX(col) {
     return LANE_PAD + col * LANE_W + LANE_W / 2;
+  }
+
+  function renderAll() {
+    if (!panelsEl) {
+      return;
+    }
+    panelsEl.textContent = '';
+    panelsEl.classList.toggle('dual', panels.length === 2);
+
+    const hint =
+      panels.length === 2
+        ? 'Click to select, Ctrl/Cmd+Click one commit in each repository, then right-click a selected commit to compare.'
+        : 'Click to select, Ctrl/Cmd+Click or Shift+Click a second commit, then right-click a selected commit to compare.';
+
+    for (const panel of panels) {
+      const width = graphWidth(panel.commits);
+
+      const panelEl = document.createElement('div');
+      panelEl.className = 'repo-panel';
+
+      const stickyTop = document.createElement('div');
+      stickyTop.className = 'sticky-top';
+
+      const top = document.createElement('div');
+      top.className = 'top';
+      const repoPathEl = document.createElement('div');
+      repoPathEl.className = 'repo-path';
+      repoPathEl.textContent = panel.repoPath;
+      top.appendChild(repoPathEl);
+      const hintEl = document.createElement('div');
+      hintEl.className = 'hint';
+      hintEl.textContent = hint;
+      top.appendChild(hintEl);
+      stickyTop.appendChild(top);
+
+      const header = document.createElement('div');
+      header.className = 'header';
+      const graphHeader = document.createElement('span');
+      graphHeader.className = 'cell graph-cell';
+      graphHeader.style.width = width + 'px';
+      graphHeader.textContent = 'Graph';
+      header.appendChild(graphHeader);
+      header.appendChild(makeCell('description', 'Description'));
+      header.appendChild(makeCell('date', 'Date'));
+      header.appendChild(makeCell('author', 'Author'));
+      header.appendChild(makeCell('hash', 'Commit'));
+      stickyTop.appendChild(header);
+
+      panelEl.appendChild(stickyTop);
+
+      const commitsEl = document.createElement('div');
+      commitsEl.className = 'commits';
+      for (let i = 0; i < panel.commits.length; i++) {
+        commitsEl.appendChild(renderCommit(panel, panel.commits[i], i, width));
+      }
+      panelEl.appendChild(commitsEl);
+      panel.commitsEl = commitsEl;
+
+      panelsEl.appendChild(panelEl);
+    }
+
+    updateSelectionClasses();
+  }
+
+  function makeCell(cls, text) {
+    const el = document.createElement('span');
+    el.className = 'cell ' + cls;
+    el.textContent = text;
+    return el;
   }
 
   function renderGraphCell(commit, width) {
@@ -126,7 +153,7 @@
     return svg;
   }
 
-  function renderCommit(commit, index, width) {
+  function renderCommit(panel, commit, index, width) {
     const row = document.createElement('div');
     row.className = 'commit' + (index % 2 === 1 ? ' stripe' : '');
     if (commit.uncommitted) {
@@ -175,53 +202,137 @@
     hash.textContent = commit.shortHash;
     row.appendChild(hash);
 
-    if (!commit.uncommitted) {
-      row.addEventListener('click', (event) => {
-        if (event.ctrlKey || event.metaKey) {
-          toggle(commit.hash);
-        }
-      });
-    }
+    row.addEventListener('mousedown', (event) => {
+      if (event.shiftKey) {
+        // Shift+Click 시 브라우저 기본 텍스트 선택이 함께 일어나지 않도록 막는다.
+        event.preventDefault();
+      }
+    });
+    row.addEventListener('click', (event) => {
+      handleClick(panel, commit.hash, index, event);
+    });
+    row.addEventListener('contextmenu', (event) => {
+      handleContextMenu(panel, commit.hash, event);
+    });
     return row;
   }
 
-  function toggle(hash) {
-    const i = selected.indexOf(hash);
-    if (i >= 0) {
-      selected.splice(i, 1);
-    } else if (selected.length >= 2) {
-      // 이미 2개가 선택된 상태에서 다른 커밋을 클릭하면 새로 선택을 시작한다.
-      selected = [hash];
+  function handleClick(panel, hash, index, event) {
+    if (event.shiftKey && panel.anchorIndex !== null) {
+      const lo = Math.min(panel.anchorIndex, index);
+      const hi = Math.max(panel.anchorIndex, index);
+      panel.selected = panel.commits.slice(lo, hi + 1).map((c) => c.hash);
+    } else if (event.ctrlKey || event.metaKey) {
+      // Ctrl(win)/Cmd(mac)+Click으로 두 번째 이후 커밋을 선택에 추가/제거한다.
+      const i = panel.selected.indexOf(hash);
+      if (i >= 0) {
+        panel.selected.splice(i, 1);
+      } else {
+        panel.selected.push(hash);
+      }
+      panel.anchorIndex = index;
     } else {
-      selected.push(hash);
+      // 아무 것도 선택되지 않았거나 다른 커밋을 클릭하면 선택이 그 커밋으로 옮겨간다.
+      panel.selected = [hash];
+      panel.anchorIndex = index;
     }
-    updateSelection();
+    updateSelectionClasses();
+  }
 
-    if (selected.length === 2) {
-      // 커밋 목록은 최신순이므로 인덱스가 큰 쪽이 오래된 커밋.
+  function handleContextMenu(panel, hash, event) {
+    event.preventDefault();
+    if (!panel.selected.includes(hash)) {
+      return;
+    }
+    showContextMenu(event.clientX, event.clientY, [
+      { label: 'Batch Compare: Git Commit', action: compareSelectedCommits },
+    ]);
+  }
+
+  function compareSelectedCommits() {
+    /** @type {{repoIndex:number, hash:string, shortHash:string}} */
+    let left;
+    /** @type {{repoIndex:number, hash:string, shortHash:string}} */
+    let right;
+
+    if (panels.length === 1) {
+      const panel = panels[0];
+      if (panel.selected.length !== 2) {
+        vscode.postMessage({ type: 'info', text: 'Select two commits.' });
+        return;
+      }
+      // 커밋 목록은 최신순(미커밋 변경사항이 맨 위)이므로 인덱스가 큰 쪽이 더 오래된 커밋.
       // 오래된 커밋을 좌측, 최신 커밋을 우측에 두어 old → new 방향으로 비교한다.
-      const a = commits.findIndex((c) => c.hash === selected[0]);
-      const b = commits.findIndex((c) => c.hash === selected[1]);
-      const older = commits[Math.max(a, b)];
-      const newer = commits[Math.min(a, b)];
-      vscode.postMessage({
-        type: 'compare',
-        leftHash: older.hash,
-        rightHash: newer.hash,
-        leftShort: older.shortHash,
-        rightShort: newer.shortHash,
-      });
+      const a = panel.commits.findIndex((c) => c.hash === panel.selected[0]);
+      const b = panel.commits.findIndex((c) => c.hash === panel.selected[1]);
+      const older = panel.commits[Math.max(a, b)];
+      const newer = panel.commits[Math.min(a, b)];
+      left = { repoIndex: 0, hash: older.hash, shortHash: older.shortHash };
+      right = { repoIndex: 0, hash: newer.hash, shortHash: newer.shortHash };
+    } else {
+      const [leftPanel, rightPanel] = panels;
+      if (leftPanel.selected.length !== 1 || rightPanel.selected.length !== 1) {
+        vscode.postMessage({ type: 'info', text: 'Select two commits.' });
+        return;
+      }
+      const l = leftPanel.commits.find((c) => c.hash === leftPanel.selected[0]);
+      const r = rightPanel.commits.find((c) => c.hash === rightPanel.selected[0]);
+      left = { repoIndex: leftPanel.index, hash: l.hash, shortHash: l.shortHash };
+      right = { repoIndex: rightPanel.index, hash: r.hash, shortHash: r.shortHash };
+    }
+
+    vscode.postMessage({ type: 'compare', left, right });
+  }
+
+  let contextMenuEl = null;
+
+  function closeContextMenu() {
+    if (contextMenuEl) {
+      contextMenuEl.remove();
+      contextMenuEl = null;
     }
   }
 
-  function updateSelection() {
-    if (!commitsEl) {
-      return;
+  function showContextMenu(x, y, items) {
+    closeContextMenu();
+    const menu = document.createElement('div');
+    menu.className = 'context-menu';
+    for (const item of items) {
+      const entry = document.createElement('div');
+      entry.className = 'context-menu-item';
+      entry.textContent = item.label;
+      entry.addEventListener('click', () => {
+        closeContextMenu();
+        item.action();
+      });
+      menu.appendChild(entry);
     }
-    const rows = commitsEl.querySelectorAll('.commit');
-    for (const row of rows) {
-      const el = /** @type {HTMLElement} */ (row);
-      el.classList.toggle('selected', selected.includes(el.dataset.hash || ''));
+    document.body.appendChild(menu);
+    const rect = menu.getBoundingClientRect();
+    const left = Math.min(x, window.innerWidth - rect.width - 4);
+    const top = Math.min(y, window.innerHeight - rect.height - 4);
+    menu.style.left = Math.max(0, left) + 'px';
+    menu.style.top = Math.max(0, top) + 'px';
+    contextMenuEl = menu;
+  }
+
+  document.addEventListener('click', closeContextMenu);
+  document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape') {
+      closeContextMenu();
+    }
+  });
+
+  function updateSelectionClasses() {
+    for (const panel of panels) {
+      if (!panel.commitsEl) {
+        continue;
+      }
+      const rows = panel.commitsEl.querySelectorAll('.commit');
+      for (const row of rows) {
+        const el = /** @type {HTMLElement} */ (row);
+        el.classList.toggle('selected', panel.selected.includes(el.dataset.hash || ''));
+      }
     }
   }
 

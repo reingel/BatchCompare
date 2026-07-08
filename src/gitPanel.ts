@@ -5,15 +5,7 @@ import { GitCommit, extractCommit, getCommits, getHeadHash, getUncommittedCount 
 import { GitGraphBuilder } from './gitGraph';
 import { createComparePanel } from './panel';
 
-const PAGE_SIZE = 300;
-
-interface GitWebviewMessage {
-  type: 'ready' | 'loadMore' | 'compare';
-  leftHash?: string;
-  rightHash?: string;
-  leftShort?: string;
-  rightShort?: string;
-}
+const UNCOMMITTED_HASH = '__uncommitted__';
 
 interface GitWebviewCommit extends GitCommit {
   graph: {
@@ -24,13 +16,65 @@ interface GitWebviewCommit extends GitCommit {
   uncommitted?: boolean;
 }
 
+interface CompareSide {
+  repoIndex: number;
+  hash: string;
+  shortHash: string;
+}
+
+interface GitWebviewMessage {
+  type: 'ready' | 'compare' | 'info';
+  left?: CompareSide;
+  right?: CompareSide;
+  text?: string;
+}
+
+async function buildRepoRows(repoPath: string): Promise<GitWebviewCommit[]> {
+  const commits = await getCommits(repoPath);
+  const graphBuilder = new GitGraphBuilder();
+  const rows: GitWebviewCommit[] = [];
+
+  if (commits.length > 0) {
+    const [uncommittedCount, headHash] = await Promise.all([
+      getUncommittedCount(repoPath),
+      getHeadHash(repoPath),
+    ]);
+    if (uncommittedCount > 0 && headHash) {
+      const graph = graphBuilder.processCommit(UNCOMMITTED_HASH, [headHash]);
+      rows.push({
+        hash: UNCOMMITTED_HASH,
+        shortHash: '',
+        parents: [headHash],
+        author: '',
+        date: '',
+        refs: '',
+        subject: `Uncommitted Changes (${uncommittedCount})`,
+        graph,
+        uncommitted: true,
+      });
+    }
+  }
+
+  for (const commit of commits) {
+    const graph = graphBuilder.processCommit(commit.hash, commit.parents);
+    rows.push({ ...commit, graph });
+  }
+
+  return rows;
+}
+
 export function createGitHistoryPanel(
   context: vscode.ExtensionContext,
-  repoRoot: string
+  repoRoots: string[]
 ): void {
+  const title =
+    repoRoots.length === 2
+      ? `Git Compare: ${path.basename(repoRoots[0])} ↔ ${path.basename(repoRoots[1])}`
+      : `Git History: ${path.basename(repoRoots[0])}`;
+
   const panel = vscode.window.createWebviewPanel(
     'batchCompareGit',
-    `Git History: ${path.basename(repoRoot)}`,
+    title,
     vscode.ViewColumn.Active,
     {
       enableScripts: true,
@@ -49,92 +93,58 @@ export function createGitHistoryPanel(
 
   panel.webview.html = getHtml(panel.webview, scriptUri, styleUri, nonce);
 
-  let loaded = 0;
-  let graphBuilder = new GitGraphBuilder();
-
-  const sendCommits = async (append: boolean) => {
-    const commits = await getCommits(repoRoot, loaded, PAGE_SIZE + 1);
-    const hasMore = commits.length > PAGE_SIZE;
-    const page = hasMore ? commits.slice(0, PAGE_SIZE) : commits;
-    loaded += page.length;
-
-    const rows: GitWebviewCommit[] = [];
-
-    // 첫 페이지 맨 위에는 커밋되지 않은 작업 트리 변경사항을 가상의 행으로 보여준다.
-    if (!append && page.length > 0) {
-      const [uncommittedCount, headHash] = await Promise.all([
-        getUncommittedCount(repoRoot),
-        getHeadHash(repoRoot),
-      ]);
-      if (uncommittedCount > 0 && headHash) {
-        const graph = graphBuilder.processCommit('__uncommitted__', [headHash]);
-        rows.push({
-          hash: '__uncommitted__',
-          shortHash: '',
-          parents: [headHash],
-          author: '',
-          date: '',
-          refs: '',
-          subject: `Uncommitted Changes (${uncommittedCount})`,
-          graph,
-          uncommitted: true,
-        });
-      }
+  const resolveSide = async (side: CompareSide): Promise<{ dir: string; label: string }> => {
+    const repoRoot = repoRoots[side.repoIndex];
+    if (side.hash === UNCOMMITTED_HASH) {
+      return { dir: repoRoot, label: 'Working Tree' };
     }
-
-    for (const commit of page) {
-      const graph = graphBuilder.processCommit(commit.hash, commit.parents);
-      rows.push({ ...commit, graph });
-    }
-
-    panel.webview.postMessage({
-      type: 'commits',
-      commits: rows,
-      append,
-      hasMore,
-      repoPath: repoRoot,
-    });
+    const dir = await extractCommit(repoRoot, side.hash, side.shortHash);
+    return { dir, label: side.shortHash };
   };
 
   panel.webview.onDidReceiveMessage(
     async (message: GitWebviewMessage) => {
       if (message.type === 'ready') {
-        loaded = 0;
-        graphBuilder = new GitGraphBuilder();
-        await sendCommits(false);
+        const repos = await Promise.all(
+          repoRoots.map(async (repoRoot, index) => ({
+            index,
+            repoPath: repoRoot,
+            commits: await buildRepoRows(repoRoot),
+          }))
+        );
+        panel.webview.postMessage({ type: 'init', repos });
         return;
       }
-      if (message.type === 'loadMore') {
-        await sendCommits(true);
+      if (message.type === 'info') {
+        if (message.text) {
+          vscode.window.showInformationMessage(message.text);
+        }
         return;
       }
       if (message.type === 'compare') {
-        const { leftHash, rightHash, leftShort, rightShort } = message;
-        if (!leftHash || !rightHash || !leftShort || !rightShort) {
+        const { left, right } = message;
+        if (!left || !right) {
           return;
         }
         try {
           const exclude = vscode.workspace
             .getConfiguration('batchCompare')
             .get<string[]>('exclude', []);
-          const { left, right, tree } = await vscode.window.withProgress(
+          const { leftDir, rightDir, tree } = await vscode.window.withProgress(
             {
               location: vscode.ProgressLocation.Notification,
-              title: `Comparing ${leftShort} ↔ ${rightShort}...`,
+              title: 'Comparing...',
             },
             async () => {
-              const [left, right] = await Promise.all([
-                extractCommit(repoRoot, leftHash, leftShort),
-                extractCommit(repoRoot, rightHash, rightShort),
-              ]);
-              const tree = await compareFolders(left, right, exclude);
-              return { left, right, tree };
+              const [l, r] = await Promise.all([resolveSide(left), resolveSide(right)]);
+              const tree = await compareFolders(l.dir, r.dir, exclude);
+              return { leftDir: l.dir, rightDir: r.dir, tree };
             }
           );
           createComparePanel(
             context,
-            vscode.Uri.file(left),
-            vscode.Uri.file(right),
+            vscode.Uri.file(leftDir),
+            vscode.Uri.file(rightDir),
             tree
           );
         } catch (err) {
@@ -168,21 +178,7 @@ function getHtml(
   <title>Git History</title>
 </head>
 <body>
-  <div id="sticky-top">
-    <div id="top">
-      <div id="repo-path"></div>
-      <div id="hint">Ctrl/Cmd+Click two commits to compare (older one becomes the left side).</div>
-    </div>
-    <div id="header">
-      <span class="cell graph-cell" id="graph-col-header">Graph</span>
-      <span class="cell description">Description</span>
-      <span class="cell date">Date</span>
-      <span class="cell author">Author</span>
-      <span class="cell hash">Commit</span>
-    </div>
-  </div>
-  <div id="commits"></div>
-  <button id="load-more" hidden>Load More</button>
+  <div id="panels"></div>
   <script nonce="${nonce}" src="${scriptUri}"></script>
 </body>
 </html>`;

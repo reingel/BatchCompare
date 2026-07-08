@@ -12,7 +12,6 @@
   const reloadBtn = document.getElementById('reload');
   if (reloadBtn) {
     reloadBtn.addEventListener('click', () => {
-      reloadBtn.classList.add('spinning');
       vscode.postMessage({ type: 'reload' });
     });
   }
@@ -20,7 +19,6 @@
   const swapBtn = document.getElementById('swap');
   if (swapBtn) {
     swapBtn.addEventListener('click', () => {
-      swapBtn.classList.add('spinning');
       vscode.postMessage({ type: 'swap' });
     });
   }
@@ -85,12 +83,6 @@
   const treeEl = document.getElementById('tree');
 
   function render(message) {
-    if (reloadBtn) {
-      reloadBtn.classList.remove('spinning');
-    }
-    if (swapBtn) {
-      swapBtn.classList.remove('spinning');
-    }
     const leftName = document.getElementById('left-name');
     const rightName = document.getElementById('right-name');
     renderRootName(leftName, message.leftName, message.rightName);

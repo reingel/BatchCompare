@@ -2,6 +2,11 @@
   --row-h: 24px;
 }
 
+html,
+body {
+  height: 100%;
+}
+
 body {
   padding: 0;
   margin: 0;
@@ -10,19 +15,35 @@ body {
   color: var(--vscode-foreground);
 }
 
-#sticky-top {
+#panels {
+  display: flex;
+  height: 100vh;
+}
+
+.repo-panel {
+  flex: 1 1 0;
+  min-width: 0;
+  height: 100%;
+  overflow-y: auto;
+}
+
+#panels.dual .repo-panel + .repo-panel {
+  border-left: 1px solid var(--vscode-panel-border);
+}
+
+.sticky-top {
   position: sticky;
   top: 0;
   z-index: 2;
   background: var(--vscode-editor-background);
 }
 
-#top {
+.top {
   padding: 6px 10px;
   border-bottom: 1px solid var(--vscode-panel-border);
 }
 
-#repo-path {
+.repo-path {
   font-weight: bold;
   white-space: nowrap;
   overflow: hidden;
@@ -31,13 +52,13 @@ body {
   text-align: left;
 }
 
-#hint {
+.hint {
   color: var(--vscode-descriptionForeground);
   font-size: 0.9em;
   margin-top: 2px;
 }
 
-#header {
+.header {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -56,9 +77,11 @@ body {
   align-items: center;
   gap: 8px;
   line-height: var(--row-h);
-  padding: 0 10px;
+  padding: 0 10px 0 7px;
   cursor: default;
   white-space: nowrap;
+  user-select: none;
+  border-left: 3px solid transparent;
 }
 
 .commit:hover {
@@ -78,6 +101,7 @@ body {
 .commit.selected:hover {
   background: var(--vscode-list-activeSelectionBackground);
   color: var(--vscode-list-activeSelectionForeground);
+  border-left-color: var(--vscode-focusBorder, #007fd4);
 }
 
 .commit.uncommitted .description {
@@ -166,23 +190,26 @@ body {
   opacity: 0.85;
 }
 
-#load-more {
-  display: block;
-  margin: 8px auto 12px;
-  border: 1px solid var(--vscode-button-border, transparent);
-  background: var(--vscode-button-secondaryBackground, transparent);
-  color: var(--vscode-button-secondaryForeground, var(--vscode-foreground));
+.context-menu {
+  position: fixed;
+  z-index: 100;
+  min-width: 200px;
+  padding: 4px;
+  background: var(--vscode-menu-background);
+  color: var(--vscode-menu-foreground);
+  border: 1px solid var(--vscode-menu-border, var(--vscode-panel-border));
+  border-radius: 4px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+}
+
+.context-menu-item {
+  padding: 4px 10px;
+  border-radius: 3px;
   cursor: pointer;
-  font-size: var(--vscode-font-size);
-  padding: 4px 16px;
-  border-radius: 2px;
+  white-space: nowrap;
 }
 
-#load-more:hover {
-  background: var(--vscode-button-secondaryHoverBackground, var(--vscode-toolbar-hoverBackground));
-}
-
-#load-more[disabled] {
-  opacity: 0.6;
-  cursor: default;
+.context-menu-item:hover {
+  background: var(--vscode-menu-selectionBackground);
+  color: var(--vscode-menu-selectionForeground);
 }

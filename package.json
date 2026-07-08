@@ -2,7 +2,7 @@
   "name": "batch-compare",
   "displayName": "BatchCompare",
   "description": "Compare two folders side by side and diff their files",
-  "version": "2.0.0",
+  "version": "2.0.2",
   "publisher": "reingel",
   "license": "MIT",
   "icon": "media/icon.png",
@@ -21,7 +21,7 @@
       },
       {
         "command": "batchCompare.gitCompare",
-        "title": "Batch Compare: Git Repo"
+        "title": "Batch Compare: Git History"
       }
     ],
     "menus": {

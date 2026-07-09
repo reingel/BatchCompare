@@ -41,6 +41,21 @@ body {
   background: var(--vscode-button-secondaryHoverBackground, var(--vscode-toolbar-hoverBackground));
 }
 
+/* 토글 버튼: 켜짐 상태를 기본 버튼 색으로 표시 */
+#toolbar button.toggle.active {
+  background: var(--vscode-button-background);
+  color: var(--vscode-button-foreground);
+}
+
+#toolbar button.toggle.active:hover {
+  background: var(--vscode-button-hoverBackground);
+}
+
+/* 토글 버튼(좌측)과 동작 버튼(우측) 사이 여백 */
+#toolbar .spacer {
+  flex: 1;
+}
+
 
 #header {
   display: flex;

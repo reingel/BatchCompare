@@ -12,20 +12,34 @@ export interface DiffNode {
   children?: DiffNode[];
 }
 
+export interface CompareOptions {
+  // true면 화이트스페이스 차이도 다른 것으로 취급, false면 무시하고 비교
+  includeWhitespace: boolean;
+  // true면 주석 차이도 다른 것으로 취급, false면 주석을 제거하고 비교
+  includeComments: boolean;
+}
+
+export const DEFAULT_COMPARE_OPTIONS: CompareOptions = {
+  includeWhitespace: false,
+  includeComments: true,
+};
+
 export async function compareFolders(
   leftRoot: string,
   rightRoot: string,
-  exclude: string[]
+  exclude: string[],
+  options: CompareOptions = DEFAULT_COMPARE_OPTIONS
 ): Promise<DiffNode[]> {
   const excludeSet = new Set(exclude);
-  return compareDir(leftRoot, rightRoot, '', excludeSet);
+  return compareDir(leftRoot, rightRoot, '', excludeSet, options);
 }
 
 async function compareDir(
   leftDir: string,
   rightDir: string,
   relPath: string,
-  exclude: Set<string>
+  exclude: Set<string>,
+  options: CompareOptions
 ): Promise<DiffNode[]> {
   const [leftEntries, rightEntries] = await Promise.all([
     readEntries(leftDir),
@@ -49,7 +63,8 @@ async function compareDir(
           path.join(leftDir, name),
           path.join(rightDir, name),
           childRelPath,
-          exclude
+          exclude,
+          options
         );
         const allSame = children.every((c) => c.status === 'same');
         nodes.push({
@@ -62,7 +77,8 @@ async function compareDir(
       } else if (!left.isDirectory() && !right.isDirectory()) {
         const equal = await filesEqual(
           path.join(leftDir, name),
-          path.join(rightDir, name)
+          path.join(rightDir, name),
+          options
         );
         nodes.push({
           name,
@@ -147,7 +163,11 @@ async function readEntries(dir: string): Promise<Map<string, fs.Dirent>> {
   return map;
 }
 
-async function filesEqual(leftPath: string, rightPath: string): Promise<boolean> {
+async function filesEqual(
+  leftPath: string,
+  rightPath: string,
+  options: CompareOptions
+): Promise<boolean> {
   let leftStat: fs.Stats;
   let rightStat: fs.Stats;
   try {
@@ -158,14 +178,202 @@ async function filesEqual(leftPath: string, rightPath: string): Promise<boolean>
   } catch {
     return false;
   }
-  if (leftStat.size !== rightStat.size) {
+  const normalize = !options.includeWhitespace || !options.includeComments;
+
+  // 바이트 단위로 동일하면 어떤 옵션에서도 동일하므로 해시로 빠르게 판정한다.
+  if (leftStat.size === rightStat.size) {
+    const [leftHash, rightHash] = await Promise.all([
+      hashFile(leftPath),
+      hashFile(rightPath),
+    ]);
+    if (leftHash === rightHash) {
+      return true;
+    }
+    if (!normalize) {
+      return false;
+    }
+  } else if (!normalize) {
     return false;
   }
-  const [leftHash, rightHash] = await Promise.all([
-    hashFile(leftPath),
-    hashFile(rightPath),
-  ]);
-  return leftHash === rightHash;
+
+  // 공백/주석을 무시하는 비교: 텍스트로 읽어 정규화 후 비교한다.
+  let leftBuf: Buffer;
+  let rightBuf: Buffer;
+  try {
+    [leftBuf, rightBuf] = await Promise.all([
+      fs.promises.readFile(leftPath),
+      fs.promises.readFile(rightPath),
+    ]);
+  } catch {
+    return false;
+  }
+  if (isBinary(leftBuf) || isBinary(rightBuf)) {
+    // 바이너리는 정규화 대상이 아니며, 여기까지 왔다면 원본이 다른 것이다.
+    return false;
+  }
+  const ext = path.extname(leftPath).slice(1).toLowerCase();
+  return (
+    normalizeContent(leftBuf.toString('utf8'), ext, options) ===
+    normalizeContent(rightBuf.toString('utf8'), ext, options)
+  );
+}
+
+function isBinary(buf: Buffer): boolean {
+  const len = Math.min(buf.length, 8000);
+  for (let i = 0; i < len; i++) {
+    if (buf[i] === 0) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function normalizeContent(
+  text: string,
+  ext: string,
+  options: CompareOptions
+): string {
+  if (!options.includeComments) {
+    text = stripComments(text, ext);
+  }
+  if (!options.includeWhitespace) {
+    text = text.replace(/\s+/g, '');
+  }
+  return text;
+}
+
+interface CommentSyntax {
+  line: string[];
+  block: [string, string][];
+  strings: string[];
+  escape: boolean; // 문자열 안에서 백슬래시 이스케이프를 지원하는 언어인지
+}
+
+const C_LIKE: CommentSyntax = {
+  line: ['//'],
+  block: [['/*', '*/']],
+  strings: ['"', "'", '`'],
+  escape: true,
+};
+const HASH_LINE: CommentSyntax = {
+  line: ['#'],
+  block: [],
+  strings: ['"', "'"],
+  escape: true,
+};
+const PYTHON: CommentSyntax = {
+  line: ['#'],
+  block: [],
+  // 삼중따옴표(docstring)는 문자열이므로 주석으로 제거하지 않는다.
+  strings: ['"""', "'''", '"', "'"],
+  escape: true,
+};
+const XML_LIKE: CommentSyntax = {
+  line: [],
+  block: [['<!--', '-->']],
+  strings: [],
+  escape: false,
+};
+const SQL: CommentSyntax = {
+  line: ['--'],
+  block: [['/*', '*/']],
+  strings: ["'", '"'],
+  escape: false,
+};
+const LUA: CommentSyntax = {
+  line: ['--'],
+  block: [['--[[', ']]']],
+  strings: ['"', "'"],
+  escape: true,
+};
+const CSS_LIKE: CommentSyntax = {
+  line: [],
+  block: [['/*', '*/']],
+  strings: ['"', "'"],
+  escape: true,
+};
+const MATLAB: CommentSyntax = {
+  line: ['%'],
+  block: [['%{', '%}']],
+  strings: ["'", '"'],
+  escape: false,
+};
+
+const COMMENT_SYNTAX: Record<string, CommentSyntax> = {
+  js: C_LIKE, jsx: C_LIKE, ts: C_LIKE, tsx: C_LIKE, mjs: C_LIKE, cjs: C_LIKE,
+  java: C_LIKE, c: C_LIKE, h: C_LIKE, cpp: C_LIKE, cc: C_LIKE, cxx: C_LIKE,
+  hpp: C_LIKE, hh: C_LIKE, cs: C_LIKE, go: C_LIKE, rs: C_LIKE, swift: C_LIKE,
+  kt: C_LIKE, kts: C_LIKE, scala: C_LIKE, dart: C_LIKE, groovy: C_LIKE,
+  php: C_LIKE, mm: C_LIKE, jsonc: C_LIKE, scss: C_LIKE, less: C_LIKE,
+  py: PYTHON, pyw: PYTHON,
+  sh: HASH_LINE, bash: HASH_LINE, zsh: HASH_LINE, fish: HASH_LINE,
+  rb: HASH_LINE, pl: HASH_LINE, r: HASH_LINE, tcl: HASH_LINE,
+  yaml: HASH_LINE, yml: HASH_LINE, toml: HASH_LINE, cmake: HASH_LINE,
+  mk: HASH_LINE, makefile: HASH_LINE,
+  html: XML_LIKE, htm: XML_LIKE, xml: XML_LIKE, svg: XML_LIKE,
+  md: XML_LIKE, markdown: XML_LIKE,
+  sql: SQL,
+  lua: LUA,
+  css: CSS_LIKE,
+  m: MATLAB,
+};
+
+// 한 줄 주석(줄 끝의 inline 주석 포함)과 멀티라인(블록) 주석을 제거한다.
+// 문자열 리터럴 내부의 주석 기호는 주석으로 취급하지 않는다.
+function stripComments(text: string, ext: string): string {
+  const syntax = COMMENT_SYNTAX[ext];
+  if (!syntax) {
+    return text;
+  }
+  let out = '';
+  let i = 0;
+  const n = text.length;
+  outer: while (i < n) {
+    for (const quote of syntax.strings) {
+      if (text.startsWith(quote, i)) {
+        out += quote;
+        i += quote.length;
+        while (i < n) {
+          if (syntax.escape && text[i] === '\\') {
+            out += text.slice(i, i + 2);
+            i += 2;
+            continue;
+          }
+          if (text.startsWith(quote, i)) {
+            out += quote;
+            i += quote.length;
+            continue outer;
+          }
+          out += text[i];
+          i++;
+        }
+        continue outer;
+      }
+    }
+    for (const [open, close] of syntax.block) {
+      if (text.startsWith(open, i)) {
+        const end = text.indexOf(close, i + open.length);
+        const segment =
+          end === -1 ? text.slice(i) : text.slice(i, end + close.length);
+        // 줄 구조가 유지되도록 주석 안의 개행은 남기고, 한 줄짜리 블록 주석은
+        // 앞뒤 토큰이 붙지 않게 공백 하나로 대체한다.
+        const newlines = segment.replace(/[^\n]+/g, '');
+        out += newlines.length > 0 ? newlines : ' ';
+        i = end === -1 ? n : end + close.length;
+        continue outer;
+      }
+    }
+    for (const marker of syntax.line) {
+      if (text.startsWith(marker, i)) {
+        const nl = text.indexOf('\n', i);
+        i = nl === -1 ? n : nl; // 개행 문자는 유지
+        continue outer;
+      }
+    }
+    out += text[i];
+    i++;
+  }
+  return out;
 }
 
 function hashFile(filePath: string): Promise<string> {

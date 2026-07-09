@@ -1,11 +1,12 @@
 import * as path from 'path';
 import * as vscode from 'vscode';
-import { compareFolders, DiffNode } from './compare';
+import { CompareOptions, DEFAULT_COMPARE_OPTIONS, compareFolders, DiffNode } from './compare';
 
 interface WebviewMessage {
-  type: 'ready' | 'reload' | 'openDiff' | 'openFile' | 'changeRoot' | 'swap';
+  type: 'ready' | 'reload' | 'openDiff' | 'openFile' | 'changeRoot' | 'swap' | 'toggleOption';
   relPath?: string;
   side?: 'left' | 'right';
+  option?: 'whitespace' | 'comment';
 }
 
 function getExclude(): string[] {
@@ -22,6 +23,8 @@ export function createComparePanel(
 ): void {
   let leftRoot = initialLeftRoot;
   let rightRoot = initialRightRoot;
+  // 초기 tree는 호출측에서 DEFAULT_COMPARE_OPTIONS로 계산되므로 같은 값으로 시작한다.
+  const options: CompareOptions = { ...DEFAULT_COMPARE_OPTIONS };
 
   const panel = vscode.window.createWebviewPanel(
     'batchCompare',
@@ -51,7 +54,8 @@ export function createComparePanel(
     const fresh = await compareFolders(
       leftRoot.fsPath,
       rightRoot.fsPath,
-      getExclude()
+      getExclude(),
+      options
     );
     panel.title = `${path.basename(leftRoot.fsPath)} ↔ ${path.basename(rightRoot.fsPath)}`;
     panel.webview.postMessage({
@@ -59,6 +63,7 @@ export function createComparePanel(
       tree: fresh,
       leftName: leftRoot.fsPath,
       rightName: rightRoot.fsPath,
+      options,
     });
   };
 
@@ -70,10 +75,22 @@ export function createComparePanel(
           tree,
           leftName: leftRoot.fsPath,
           rightName: rightRoot.fsPath,
+          options,
         });
         return;
       }
       if (message.type === 'reload') {
+        await refresh();
+        return;
+      }
+      if (message.type === 'toggleOption') {
+        if (message.option === 'whitespace') {
+          options.includeWhitespace = !options.includeWhitespace;
+        } else if (message.option === 'comment') {
+          options.includeComments = !options.includeComments;
+        } else {
+          return;
+        }
         await refresh();
         return;
       }
@@ -150,6 +167,9 @@ function getHtml(
 <body>
   <div id="top">
     <div id="toolbar">
+      <button id="toggle-whitespace" class="toggle" title="Include whitespace differences in comparison">Whitespace</button>
+      <button id="toggle-comment" class="toggle" title="Include comment differences in comparison">Comment</button>
+      <span class="spacer"></span>
       <button id="swap" title="Swap left and right folders">⇄ Swap</button>
       <button id="expand-diff-only" title="Expand Diff Only">Expand Diff Only</button>
       <button id="expand-all" title="Expand All">Expand All</button>

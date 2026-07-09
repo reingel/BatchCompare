@@ -44,6 +44,34 @@
     });
   }
 
+  // 켜면 화이트스페이스/주석을 포함하여 비교하고, 끄면 무시하고 비교한다.
+  // 실제 상태는 extension이 갖고 있으며, init 메시지의 options로 버튼 표시를 맞춘다.
+  const whitespaceBtn = document.getElementById('toggle-whitespace');
+  if (whitespaceBtn) {
+    whitespaceBtn.addEventListener('click', () => {
+      vscode.postMessage({ type: 'toggleOption', option: 'whitespace' });
+    });
+  }
+
+  const commentBtn = document.getElementById('toggle-comment');
+  if (commentBtn) {
+    commentBtn.addEventListener('click', () => {
+      vscode.postMessage({ type: 'toggleOption', option: 'comment' });
+    });
+  }
+
+  function updateToggles(options) {
+    if (!options) {
+      return;
+    }
+    if (whitespaceBtn) {
+      whitespaceBtn.classList.toggle('active', options.includeWhitespace);
+    }
+    if (commentBtn) {
+      commentBtn.classList.toggle('active', options.includeComments);
+    }
+  }
+
   function setAllCollapsed(collapsed) {
     const nodes = treeEl.querySelectorAll('.node');
     for (const node of nodes) {
@@ -83,6 +111,7 @@
   const treeEl = document.getElementById('tree');
 
   function render(message) {
+    updateToggles(message.options);
     const leftName = document.getElementById('left-name');
     const rightName = document.getElementById('right-name');
     renderRootName(leftName, message.leftName, message.rightName);

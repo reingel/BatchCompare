@@ -24,21 +24,78 @@ export const DEFAULT_COMPARE_OPTIONS: CompareOptions = {
   includeComments: true,
 };
 
+export type ExcludeMatcher = (name: string, relPath: string) => boolean;
+
+/** Escape a literal (non-wildcard) run for use inside a RegExp. */
+function escapeRegex(literal: string): string {
+  return literal.replace(/[.+^${}()|[\]\\]/g, '\\$&');
+}
+
+/**
+ * Convert a single glob pattern to a RegExp.
+ * Supports `*` (any run of non-slash chars), `**` (any run including slashes),
+ * and `?` (a single non-slash char). Anything else is matched literally.
+ */
+function globToRegExp(pattern: string): RegExp {
+  let re = '';
+  for (let i = 0; i < pattern.length; i++) {
+    const c = pattern[i];
+    if (c === '*') {
+      if (pattern[i + 1] === '*') {
+        re += '.*';
+        i++;
+      } else {
+        re += '[^/]*';
+      }
+    } else if (c === '?') {
+      re += '[^/]';
+    } else {
+      re += escapeRegex(c);
+    }
+  }
+  return new RegExp(`^${re}$`);
+}
+
+/**
+ * Build a matcher from exclude patterns. A pattern matches when it equals the
+ * entry name or path, or when its glob form matches either. Patterns without a
+ * slash are tested against the entry's base name so `*.log` excludes files at
+ * any depth; patterns with a slash are tested against the path relative to the
+ * compare root.
+ */
+export function createExcludeMatcher(patterns: string[]): ExcludeMatcher {
+  const compiled = patterns.map((pattern) => ({
+    hasSlash: pattern.includes('/'),
+    isGlob: /[*?]/.test(pattern),
+    re: globToRegExp(pattern),
+    raw: pattern,
+  }));
+  return (name, relPath) => {
+    for (const p of compiled) {
+      const target = p.hasSlash ? relPath : name;
+      if (p.isGlob ? p.re.test(target) : target === p.raw) {
+        return true;
+      }
+    }
+    return false;
+  };
+}
+
 export async function compareFolders(
   leftRoot: string,
   rightRoot: string,
   exclude: string[],
   options: CompareOptions = DEFAULT_COMPARE_OPTIONS
 ): Promise<DiffNode[]> {
-  const excludeSet = new Set(exclude);
-  return compareDir(leftRoot, rightRoot, '', excludeSet, options);
+  const isExcluded = createExcludeMatcher(exclude);
+  return compareDir(leftRoot, rightRoot, '', isExcluded, options);
 }
 
 async function compareDir(
   leftDir: string,
   rightDir: string,
   relPath: string,
-  exclude: Set<string>,
+  exclude: ExcludeMatcher,
   options: CompareOptions
 ): Promise<DiffNode[]> {
   const [leftEntries, rightEntries] = await Promise.all([
@@ -50,12 +107,12 @@ async function compareDir(
   const nodes: DiffNode[] = [];
 
   for (const name of names) {
-    if (exclude.has(name)) {
+    const childRelPath = relPath ? `${relPath}/${name}` : name;
+    if (exclude(name, childRelPath)) {
       continue;
     }
     const left = leftEntries.get(name);
     const right = rightEntries.get(name);
-    const childRelPath = relPath ? `${relPath}/${name}` : name;
 
     if (left && right) {
       if (left.isDirectory() && right.isDirectory()) {
@@ -125,15 +182,15 @@ async function scanOneSide(
   dir: string,
   relPath: string,
   status: DiffStatus,
-  exclude: Set<string>
+  exclude: ExcludeMatcher
 ): Promise<DiffNode[]> {
   const entries = await readEntries(dir);
   const nodes: DiffNode[] = [];
   for (const [name, entry] of entries) {
-    if (exclude.has(name)) {
+    const childRelPath = `${relPath}/${name}`;
+    if (exclude(name, childRelPath)) {
       continue;
     }
-    const childRelPath = `${relPath}/${name}`;
     if (entry.isDirectory()) {
       nodes.push({
         name,

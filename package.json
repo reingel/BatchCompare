@@ -2,7 +2,7 @@
   "name": "batch-compare",
   "displayName": "BatchCompare",
   "description": "Compare two folders side by side and diff their files",
-  "version": "2.1.0",
+  "version": "2.2.0",
   "publisher": "reingel",
   "license": "MIT",
   "icon": "media/icon.png",
@@ -51,7 +51,7 @@
             ".git",
             "node_modules"
           ],
-          "description": "Names of files or folders to exclude from comparison."
+          "description": "Files or folders to exclude from comparison. Supports glob wildcards: * (any run of characters within a path segment), ** (across segments), and ? (a single character). Patterns without a slash match by base name at any depth (e.g. *.log, node_modules); patterns with a slash match the path relative to the compared folder (e.g. build/*, dist/**)."
         }
       }
     }

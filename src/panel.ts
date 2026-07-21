@@ -1,9 +1,18 @@
+import * as fs from 'fs';
 import * as path from 'path';
 import * as vscode from 'vscode';
 import { CompareOptions, DEFAULT_COMPARE_OPTIONS, compareFolders, DiffNode } from './compare';
 
 interface WebviewMessage {
-  type: 'ready' | 'reload' | 'openDiff' | 'openFile' | 'changeRoot' | 'swap' | 'toggleOption';
+  type:
+    | 'ready'
+    | 'reload'
+    | 'openDiff'
+    | 'openFile'
+    | 'changeRoot'
+    | 'swap'
+    | 'toggleOption'
+    | 'copyToRight';
   relPath?: string;
   side?: 'left' | 'right';
   option?: 'whitespace' | 'comment';
@@ -141,6 +150,19 @@ export function createComparePanel(
           'vscode.open',
           message.side === 'left' ? leftUri : rightUri
         );
+      } else if (message.type === 'copyToRight') {
+        try {
+          await fs.promises.mkdir(path.dirname(rightUri.fsPath), { recursive: true });
+          await fs.promises.cp(leftUri.fsPath, rightUri.fsPath, { recursive: true });
+        } catch (err) {
+          vscode.window.showErrorMessage(
+            `Batch Compare: failed to copy ${message.relPath} — ${
+              err instanceof Error ? err.message : String(err)
+            }`
+          );
+          return;
+        }
+        await refresh();
       }
     },
     undefined,
@@ -178,6 +200,7 @@ function getHtml(
     </div>
     <div id="header">
       <div id="left-name" class="root-name"></div>
+      <div class="gutter"></div>
       <div id="right-name" class="root-name"></div>
     </div>
   </div>

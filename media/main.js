@@ -219,6 +219,7 @@
     row.className =
       'row status-' + node.status + ' kind-' + (node.isDirectory ? 'dir' : 'file');
     row.appendChild(renderCell(node, isLast, ancestorLines, 'left', hasChildren));
+    row.appendChild(renderGutter(node));
     row.appendChild(renderCell(node, isLast, ancestorLines, 'right', hasChildren));
     container.appendChild(row);
 
@@ -256,6 +257,25 @@
     }
 
     return container;
+  }
+
+  // 좌우 패널 사이 공간. 좌측에만 있는 항목은 우측으로 복사하는 화살표를 표시한다.
+  function renderGutter(node) {
+    const gutter = document.createElement('div');
+    gutter.className = 'gutter';
+    if (node.status === 'onlyLeft') {
+      const arrow = document.createElement('span');
+      arrow.className = 'copy-arrow';
+      arrow.textContent = '→';
+      arrow.title = 'Copy to right';
+      arrow.addEventListener('click', (event) => {
+        event.stopPropagation();
+        showLoading();
+        vscode.postMessage({ type: 'copyToRight', relPath: node.relPath });
+      });
+      gutter.appendChild(arrow);
+    }
+    return gutter;
   }
 
   function renderCell(node, isLast, ancestorLines, side, hasChildren) {

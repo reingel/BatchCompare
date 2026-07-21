@@ -2,6 +2,7 @@
   --guide-w: 16px;
   --row-h: 22px;
   --guide-color: var(--vscode-tree-indentGuidesStroke, rgba(128, 128, 128, 0.4));
+  --gutter-w: 24px;
 }
 
 body {
@@ -141,6 +142,31 @@ body {
   white-space: nowrap;
   overflow: hidden;
   padding-right: 8px;
+}
+
+/* 좌우 패널 사이 공간(vscode diff의 gutter와 유사). 좌측에만 있는 항목의
+   복사 화살표가 여기에 표시된다. */
+.gutter {
+  flex: 0 0 var(--gutter-w);
+  width: var(--gutter-w);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-left: 1px solid var(--vscode-panel-border);
+  border-right: 1px solid var(--vscode-panel-border);
+}
+
+.copy-arrow {
+  cursor: pointer;
+  font-size: 12px;
+  line-height: 1;
+  color: var(--vscode-gitDecoration-addedResourceForeground, #587c0c);
+  opacity: 0.7;
+}
+
+.copy-arrow:hover {
+  opacity: 1;
+  transform: scale(1.15);
 }
 
 .cell.empty {

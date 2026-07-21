@@ -179,6 +179,12 @@ function getHtml(
 </head>
 <body>
   <div id="panels"></div>
+
+  <div id="loading-overlay">
+    <div class="loading-spinner"></div>
+    <div id="loading-text">Loading...</div>
+  </div>
+
   <script nonce="${nonce}" src="${scriptUri}"></script>
 </body>
 </html>`;

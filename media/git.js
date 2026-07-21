@@ -43,6 +43,7 @@
   }
 
   function renderAll() {
+    document.getElementById('loading-overlay')?.classList.add('hidden');
     if (!panelsEl) {
       return;
     }

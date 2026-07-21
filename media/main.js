@@ -9,9 +9,18 @@
     }
   });
 
+  const loadingOverlay = document.getElementById('loading-overlay');
+  function showLoading() {
+    loadingOverlay?.classList.remove('hidden');
+  }
+  function hideLoading() {
+    loadingOverlay?.classList.add('hidden');
+  }
+
   const reloadBtn = document.getElementById('reload');
   if (reloadBtn) {
     reloadBtn.addEventListener('click', () => {
+      showLoading();
       vscode.postMessage({ type: 'reload' });
     });
   }
@@ -19,6 +28,7 @@
   const swapBtn = document.getElementById('swap');
   if (swapBtn) {
     swapBtn.addEventListener('click', () => {
+      showLoading();
       vscode.postMessage({ type: 'swap' });
     });
   }
@@ -49,6 +59,7 @@
   const whitespaceBtn = document.getElementById('toggle-whitespace');
   if (whitespaceBtn) {
     whitespaceBtn.addEventListener('click', () => {
+      showLoading();
       vscode.postMessage({ type: 'toggleOption', option: 'whitespace' });
     });
   }
@@ -56,6 +67,7 @@
   const commentBtn = document.getElementById('toggle-comment');
   if (commentBtn) {
     commentBtn.addEventListener('click', () => {
+      showLoading();
       vscode.postMessage({ type: 'toggleOption', option: 'comment' });
     });
   }
@@ -127,6 +139,7 @@
     }
     // 기본 모드: diff가 있는 경로만 펼쳐서 보여준다.
     expandDiffOnly();
+    hideLoading();
   }
 
   // 경로를 구분자(/ 또는 \)를 유지한 채 조각으로 나눈다.

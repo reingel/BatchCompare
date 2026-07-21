@@ -182,6 +182,12 @@ function getHtml(
     </div>
   </div>
   <div id="tree"></div>
+
+  <div id="loading-overlay">
+    <div class="loading-spinner"></div>
+    <div id="loading-text">Comparing...</div>
+  </div>
+
   <script nonce="${nonce}" src="${scriptUri}"></script>
 </body>
 </html>`;

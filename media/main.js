@@ -6,6 +6,11 @@
     const message = event.data;
     if (message.type === 'init') {
       render(message);
+    } else if (message.type === 'copied') {
+      if (message.ok) {
+        applyCopied(message.relPath);
+      }
+      hideLoading();
     }
   });
 
@@ -28,7 +33,7 @@
   const swapBtn = document.getElementById('swap');
   if (swapBtn) {
     swapBtn.addEventListener('click', () => {
-      showLoading();
+      // 좌우를 바꾸는 것은 다시 비교할 필요가 없어 즉시 끝나므로 로딩 표시를 하지 않는다.
       vscode.postMessage({ type: 'swap' });
     });
   }
@@ -122,6 +127,12 @@
 
   const treeEl = document.getElementById('tree');
 
+  // 화면에 그려진 트리와, relPath로 노드/DOM/렌더링 인자를 다시 찾기 위한 색인.
+  // 일부만 다시 그릴 때(복사 후 갱신) 사용한다.
+  let treeData = [];
+  const nodeInfo = new Map();
+  const nodeElements = new Map();
+
   function render(message) {
     updateToggles(message.options);
     const leftName = document.getElementById('left-name');
@@ -131,15 +142,116 @@
     renderRootName(rightName, message.rightName, message.leftName);
     rightName.title = message.rightName + '\n(click to change)';
 
+    // swap처럼 트리 구조가 그대로인 경우에는 사용자가 펼쳐둔 상태를 유지한다.
+    const collapsed = message.preserveState ? collapsedPaths() : null;
+
+    treeData = message.tree;
+    nodeInfo.clear();
+    nodeElements.clear();
     treeEl.textContent = '';
     for (let i = 0; i < message.tree.length; i++) {
       const node = message.tree[i];
       const isLast = i === message.tree.length - 1;
       treeEl.appendChild(renderNode(node, isLast, null));
     }
-    // 기본 모드: diff가 있는 경로만 펼쳐서 보여준다.
-    expandDiffOnly();
+    if (collapsed) {
+      for (const node of treeData) {
+        restoreCollapsed(node, collapsed);
+      }
+      restripe();
+    } else {
+      // 기본 모드: diff가 있는 경로만 펼쳐서 보여준다.
+      expandDiffOnly();
+    }
     hideLoading();
+  }
+
+  function collapsedPaths() {
+    const paths = new Set();
+    for (const [relPath, el] of nodeElements) {
+      if (el.classList.contains('collapsed')) {
+        paths.add(relPath);
+      }
+    }
+    return paths;
+  }
+
+  function restoreCollapsed(node, collapsed) {
+    if (!node.children || node.children.length === 0) {
+      return;
+    }
+    const el = nodeElements.get(node.relPath);
+    if (el) {
+      el.classList.toggle('collapsed', collapsed.has(node.relPath));
+    }
+    for (const child of node.children) {
+      restoreCollapsed(child, collapsed);
+    }
+  }
+
+  function markSame(node) {
+    node.status = 'same';
+    for (const child of node.children || []) {
+      markSame(child);
+    }
+  }
+
+  // 복사가 끝난 항목만 다시 그린다. 전체를 다시 비교/렌더링하지 않으므로
+  // 항목이 많아도 즉시 반영되고 나머지 화면 상태도 그대로 유지된다.
+  function applyCopied(relPath) {
+    const info = nodeInfo.get(relPath);
+    const el = nodeElements.get(relPath);
+    if (!info || !el) {
+      return;
+    }
+    const collapsed = collapsedPaths();
+    markSame(info.node);
+    const fresh = renderNode(info.node, info.isLast, info.ancestorLines);
+    el.replaceWith(fresh);
+    restoreCollapsed(info.node, collapsed);
+    updateAncestorStatus(relPath);
+    restripe();
+  }
+
+  // 자식이 모두 same이면 폴더도 same, 아니면 modified. 바뀌지 않는 지점에서 멈춘다.
+  function updateAncestorStatus(relPath) {
+    const chain = [];
+    let level = treeData;
+    for (const segment of relPath.split('/')) {
+      const found = level.find((node) => node.name === segment);
+      if (!found) {
+        return;
+      }
+      chain.push(found);
+      level = found.children || [];
+    }
+    chain.pop();
+
+    for (let i = chain.length - 1; i >= 0; i--) {
+      const dir = chain[i];
+      const status = (dir.children || []).every((c) => c.status === 'same')
+        ? 'same'
+        : 'modified';
+      if (dir.status === status) {
+        return;
+      }
+      dir.status = status;
+      const el = nodeElements.get(dir.relPath);
+      if (!el) {
+        continue;
+      }
+      el.dataset.status = status;
+      const row = el.querySelector(':scope > .row');
+      if (row) {
+        row.classList.remove(
+          'status-same',
+          'status-modified',
+          'status-onlyLeft',
+          'status-onlyRight'
+        );
+        row.classList.add('status-' + status);
+      }
+    }
   }
 
   // 경로를 구분자(/ 또는 \)를 유지한 채 조각으로 나눈다.
@@ -211,6 +323,8 @@
     const container = document.createElement('div');
     container.className = 'node';
     container.dataset.status = node.status;
+    nodeInfo.set(node.relPath, { node, isLast, ancestorLines });
+    nodeElements.set(node.relPath, container);
 
     const hasChildren =
       node.isDirectory && node.children && node.children.length > 0;

@@ -2,7 +2,7 @@
   "name": "batch-compare",
   "displayName": "BatchCompare",
   "description": "Compare two folders side by side and diff their files",
-  "version": "2.4.0",
+  "version": "2.5.0",
   "publisher": "reingel",
   "license": "MIT",
   "icon": "media/icon.png",

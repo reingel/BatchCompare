@@ -3,6 +3,56 @@ import * as path from 'path';
 import * as vscode from 'vscode';
 import { CompareOptions, DEFAULT_COMPARE_OPTIONS, compareFolders, DiffNode } from './compare';
 
+/** 좌우를 맞바꾼다. 비교 결과는 대칭이므로 onlyLeft/onlyRight만 뒤집으면 된다. */
+function mirrorTree(nodes: DiffNode[]): void {
+  for (const node of nodes) {
+    if (node.status === 'onlyLeft') {
+      node.status = 'onlyRight';
+    } else if (node.status === 'onlyRight') {
+      node.status = 'onlyLeft';
+    }
+    if (node.children) {
+      mirrorTree(node.children);
+    }
+  }
+}
+
+function markSame(node: DiffNode): void {
+  node.status = 'same';
+  for (const child of node.children ?? []) {
+    markSame(child);
+  }
+}
+
+/**
+ * 좌→우 복사가 끝난 항목의 상태만 갱신한다. 복사본은 원본과 바이트 단위로
+ * 같으므로 어떤 비교 옵션에서도 'same'이며, 조상 폴더는 자식 상태로 다시 계산한다.
+ */
+function markCopied(nodes: DiffNode[], relPath: string): void {
+  const chain: DiffNode[] = [];
+  let level = nodes;
+  for (const segment of relPath.split('/')) {
+    const found = level.find((node) => node.name === segment);
+    if (!found) {
+      return;
+    }
+    chain.push(found);
+    level = found.children ?? [];
+  }
+
+  markSame(chain.pop()!);
+  for (let i = chain.length - 1; i >= 0; i--) {
+    const dir = chain[i];
+    const status = (dir.children ?? []).every((c) => c.status === 'same')
+      ? 'same'
+      : 'modified';
+    if (dir.status === status) {
+      break;
+    }
+    dir.status = status;
+  }
+}
+
 interface WebviewMessage {
   type:
     | 'ready'
@@ -59,33 +109,37 @@ export function createComparePanel(
 
   panel.webview.html = getHtml(panel.webview, scriptUri, styleUri, nonce);
 
+  // 현재 화면에 그려진 트리. swap/복사처럼 결과를 이미 알 수 있는 동작은
+  // 이 트리를 직접 고쳐서 보내고, 다시 비교(compareFolders)하지 않는다.
+  let currentTree = tree;
+
+  const postTree = (preserveState: boolean) => {
+    panel.title = `${path.basename(leftRoot.fsPath)} ↔ ${path.basename(rightRoot.fsPath)}`;
+    panel.webview.postMessage({
+      type: 'init',
+      tree: currentTree,
+      leftName: leftRoot.fsPath,
+      rightName: rightRoot.fsPath,
+      options,
+      preserveState,
+    });
+  };
+
   const refresh = async () => {
-    const fresh = await compareFolders(
+    currentTree = await compareFolders(
       leftRoot.fsPath,
       rightRoot.fsPath,
       getExclude(),
       options
     );
-    panel.title = `${path.basename(leftRoot.fsPath)} ↔ ${path.basename(rightRoot.fsPath)}`;
-    panel.webview.postMessage({
-      type: 'init',
-      tree: fresh,
-      leftName: leftRoot.fsPath,
-      rightName: rightRoot.fsPath,
-      options,
-    });
+    postTree(false);
   };
 
   panel.webview.onDidReceiveMessage(
     async (message: WebviewMessage) => {
       if (message.type === 'ready') {
-        panel.webview.postMessage({
-          type: 'init',
-          tree,
-          leftName: leftRoot.fsPath,
-          rightName: rightRoot.fsPath,
-          options,
-        });
+        // webview가 다시 로드되어도 다시 비교하지 않고 현재 트리를 그대로 보낸다.
+        postTree(false);
         return;
       }
       if (message.type === 'reload') {
@@ -105,7 +159,8 @@ export function createComparePanel(
       }
       if (message.type === 'swap') {
         [leftRoot, rightRoot] = [rightRoot, leftRoot];
-        await refresh();
+        mirrorTree(currentTree);
+        postTree(true);
         return;
       }
       if (message.type === 'changeRoot') {
@@ -160,9 +215,12 @@ export function createComparePanel(
               err instanceof Error ? err.message : String(err)
             }`
           );
+          panel.webview.postMessage({ type: 'copied', relPath: message.relPath, ok: false });
           return;
         }
-        await refresh();
+        // 복사한 항목만 갱신한다. 전체를 다시 비교하지 않으므로 항목이 많아도 즉시 반영된다.
+        markCopied(currentTree, message.relPath);
+        panel.webview.postMessage({ type: 'copied', relPath: message.relPath, ok: true });
       }
     },
     undefined,

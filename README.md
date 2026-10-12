@@ -10,6 +10,15 @@ Compare two folders side by side in Visual Studio Code.
 - Select **one folder**, right-click, and choose **Batch Compare** — the selected folder becomes the right side, and a dialog lets you pick the left folder to compare against.
 - Click either path shown at the top of the compare view to reopen the folder-picker dialog and swap in a different folder for that side.
 
+### Comparing Git commits
+
+- Right-click **one folder** in a Git repository and choose **Batch Compare: Git History**, or run that command from the Command Palette.
+- Select two commits with **Ctrl/Cmd+Click**. **Shift+Click** selects the first and second endpoints, even when other commits lie between them.
+- Click **Compare Selected Commits**, or right-click a selected commit and choose **Batch Compare: Git Commit**. The commit lower in the history is shown on the left; the commit higher in the history is shown on the right.
+- The history includes commits from all local branches, remote-tracking branches, and tags, plus **Uncommitted Changes** when the working tree has changes.
+- To compare commits from **two repositories**, select two folders in the Explorer and open **Batch Compare: Git History**, then select one commit in each repository.
+- The comparison opens the same folder tree and file diff view used for folder comparisons. Commit snapshots are extracted to separate temporary folders without checking out commits or changing your working tree.
+
 ### Comparing trees
 
 - A two-column tree view shows both folder structures aligned by relative path, connected with expandable tree guide lines.

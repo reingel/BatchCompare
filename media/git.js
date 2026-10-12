@@ -18,6 +18,8 @@
   let panels = [];
 
   const panelsEl = document.getElementById('panels');
+  const compareButton = /** @type {HTMLButtonElement|null} */ (document.getElementById('compare-selected'));
+  compareButton?.addEventListener('click', compareSelectedCommits);
 
   window.addEventListener('message', (event) => {
     const message = event.data;
@@ -52,8 +54,8 @@
 
     const hint =
       panels.length === 2
-        ? 'Click to select, Ctrl/Cmd+Click one commit in each repository, then right-click a selected commit to compare.'
-        : 'Click to select, Ctrl/Cmd+Click or Shift+Click a second commit, then right-click a selected commit to compare.';
+        ? 'Select one commit in each repository, then click Compare Selected Commits.'
+        : 'Select a commit, then Ctrl/Cmd+Click or Shift+Click a second commit and click Compare Selected Commits.';
 
     for (const panel of panels) {
       const width = graphWidth(panel.commits);
@@ -220,9 +222,8 @@
 
   function handleClick(panel, hash, index, event) {
     if (event.shiftKey && panel.anchorIndex !== null) {
-      const lo = Math.min(panel.anchorIndex, index);
-      const hi = Math.max(panel.anchorIndex, index);
-      panel.selected = panel.commits.slice(lo, hi + 1).map((c) => c.hash);
+      // 범위 전체가 아닌 비교할 두 끝점만 선택한다.
+      panel.selected = [...new Set([panel.commits[panel.anchorIndex].hash, hash])];
     } else if (event.ctrlKey || event.metaKey) {
       // Ctrl(win)/Cmd(mac)+Click으로 두 번째 이후 커밋을 선택에 추가/제거한다.
       const i = panel.selected.indexOf(hash);
@@ -325,6 +326,20 @@
   });
 
   function updateSelectionClasses() {
+    const canCompare = panels.length === 1
+      ? panels[0].selected.length === 2
+      : panels.length === 2 && panels.every((panel) => panel.selected.length === 1);
+    if (compareButton) {
+      compareButton.disabled = !canCompare;
+    }
+    const selectionHint = document.getElementById('selection-hint');
+    if (selectionHint) {
+      selectionHint.textContent = canCompare
+        ? 'Ready to compare.'
+        : panels.length === 2
+          ? 'Select one commit in each repository.'
+          : 'Select two commits to compare.';
+    }
     for (const panel of panels) {
       if (!panel.commitsEl) {
         continue;

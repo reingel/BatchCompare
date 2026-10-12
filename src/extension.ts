@@ -90,32 +90,15 @@ export function activate(context: vscode.ExtensionContext): void {
           }
           repoRoots = [rootA, rootB];
         } else if (selected.length === 1) {
-          // 폴더 하나만 선택한 경우: 선택한 저장소를 우측에 두고, 좌측 저장소는 다이얼로그로 선택받는다.
-          const right = await resolveRepo(selected[0]);
-          if (!right) {
+          // 한 저장소의 서로 다른 커밋을 비교한다.
+          const root = await resolveRepo(selected[0]);
+          if (!root) {
             vscode.window.showWarningMessage(
               'Batch Compare: the selected folder is not a git repository.'
             );
             return;
           }
-          const picked = await vscode.window.showOpenDialog({
-            canSelectFolders: true,
-            canSelectFiles: false,
-            canSelectMany: false,
-            openLabel: 'Select as Left Repository',
-            title: 'Select the left git repository to compare against',
-          });
-          if (!picked || picked.length === 0) {
-            return;
-          }
-          const left = await getRepoRoot(picked[0].fsPath);
-          if (!left) {
-            vscode.window.showWarningMessage(
-              'Batch Compare: the selected folder is not a git repository.'
-            );
-            return;
-          }
-          repoRoots = [left, right];
+          repoRoots = [root];
         } else if (selected.length === 0) {
           // 커맨드 팔레트 등 탐색기 선택 없이 호출된 경우: 워크스페이스에서 저장소를 찾는다.
           const folders = vscode.workspace.workspaceFolders ?? [];

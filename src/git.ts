@@ -49,6 +49,8 @@ export async function getCommits(repoPath: string): Promise<GitCommit[]> {
   try {
     out = await runGit(repoPath, [
       'log',
+      '--all',
+      'HEAD',
       '--topo-order',
       '--date=format:%Y-%m-%d %H:%M',
       '--pretty=format:%H\x1f%h\x1f%P\x1f%an\x1f%ad\x1f%D\x1f%s\x1e',
@@ -102,17 +104,17 @@ export async function getHeadHash(repoPath: string): Promise<string | undefined>
 }
 
 // 커밋의 파일 트리를 임시 폴더로 추출하고 그 경로를 반환한다.
-// 폴더 basename이 비교 패널의 제목에 그대로 쓰이므로 짧은 해시로 만든다.
+// 각 추출마다 별도 디렉터리를 사용해 기존 비교와 동시 비교를 보존한다.
 export async function extractCommit(
   repoPath: string,
   hash: string,
   shortHash: string
 ): Promise<string> {
   const repoName = path.basename(repoPath).replace(/[^\w.-]/g, '_');
-  const dir = path.join(os.tmpdir(), 'batch-compare-git', repoName, shortHash);
-  await fs.promises.rm(dir, { recursive: true, force: true });
+  const tempRoot = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'batch-compare-git-'));
+  extractedDirs.add(tempRoot);
+  const dir = path.join(tempRoot, repoName, shortHash.replace(/[^\w.-]/g, '_'));
   await fs.promises.mkdir(dir, { recursive: true });
-  extractedDirs.add(dir);
 
   await new Promise<void>((resolve, reject) => {
     const git = spawn('git', ['-C', repoPath, 'archive', '--format=tar', hash]);
@@ -121,22 +123,30 @@ export async function extractCommit(
     let tarErr = '';
     git.stderr.on('data', (d) => (gitErr += d));
     tar.stderr.on('data', (d) => (tarErr += d));
+    // git이 실패하면 tar만 성공해도 추출 성공으로 처리하지 않는다.
+    const gitDone = new Promise<void>((done, fail) => {
+      git.on('error', fail);
+      git.on('close', (code) => {
+        if (code === 0) {
+          done();
+        } else {
+          fail(new Error(`git archive failed: ${gitErr.trim() || `exit ${code}`}`));
+        }
+      });
+    });
+    const tarDone = new Promise<void>((done, fail) => {
+      tar.on('error', fail);
+      tar.on('close', (code) => {
+        if (code === 0) {
+          done();
+        } else {
+          fail(new Error(`tar failed: ${tarErr.trim() || `exit ${code}`}`));
+        }
+      });
+    });
+    tar.stdin.on('error', reject);
     git.stdout.pipe(tar.stdin);
-    git.on('error', reject);
-    tar.on('error', reject);
-    git.on('close', (code) => {
-      if (code !== 0) {
-        tar.stdin.end();
-        reject(new Error(`git archive failed: ${gitErr.trim() || `exit ${code}`}`));
-      }
-    });
-    tar.on('close', (code) => {
-      if (code === 0) {
-        resolve();
-      } else {
-        reject(new Error(`tar failed: ${tarErr.trim() || `exit ${code}`}`));
-      }
-    });
+    Promise.all([gitDone, tarDone]).then(() => resolve(), reject);
   });
 
   return dir;

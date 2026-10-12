@@ -178,6 +178,10 @@ function getHtml(
   <title>Git History</title>
 </head>
 <body>
+  <div id="compare-toolbar">
+    <button id="compare-selected" disabled>Compare Selected Commits</button>
+    <span id="selection-hint">Select two commits to compare.</span>
+  </div>
   <div id="panels"></div>
 
   <div id="loading-overlay">

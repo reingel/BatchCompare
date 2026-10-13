@@ -275,7 +275,7 @@ async function filesEqual(
   );
 }
 
-function isBinary(buf: Buffer): boolean {
+export function isBinary(buf: Buffer): boolean {
   const len = Math.min(buf.length, 8000);
   for (let i = 0; i < len; i++) {
     if (buf[i] === 0) {
@@ -377,31 +377,36 @@ const COMMENT_SYNTAX: Record<string, CommentSyntax> = {
 
 // 한 줄 주석(줄 끝의 inline 주석 포함)과 멀티라인(블록) 주석을 제거한다.
 // 문자열 리터럴 내부의 주석 기호는 주석으로 취급하지 않는다.
-function stripComments(text: string, ext: string): string {
+export function stripComments(text: string, ext: string, sourceOffsets?: number[]): string {
   const syntax = COMMENT_SYNTAX[ext];
   if (!syntax) {
+    if (sourceOffsets) for (let i = 0; i < text.length; i++) sourceOffsets.push(i);
     return text;
   }
   let out = '';
+  const append = (value: string, start: number) => {
+    out += value;
+    if (sourceOffsets) for (let j = 0; j < value.length; j++) sourceOffsets.push(start < 0 ? -1 : start + j);
+  };
   let i = 0;
   const n = text.length;
   outer: while (i < n) {
     for (const quote of syntax.strings) {
       if (text.startsWith(quote, i)) {
-        out += quote;
+        append(quote, i);
         i += quote.length;
         while (i < n) {
           if (syntax.escape && text[i] === '\\') {
-            out += text.slice(i, i + 2);
+            append(text.slice(i, i + 2), i);
             i += 2;
             continue;
           }
           if (text.startsWith(quote, i)) {
-            out += quote;
+            append(quote, i);
             i += quote.length;
             continue outer;
           }
-          out += text[i];
+          append(text[i], i);
           i++;
         }
         continue outer;
@@ -415,7 +420,9 @@ function stripComments(text: string, ext: string): string {
         // 줄 구조가 유지되도록 주석 안의 개행은 남기고, 한 줄짜리 블록 주석은
         // 앞뒤 토큰이 붙지 않게 공백 하나로 대체한다.
         const newlines = segment.replace(/[^\n]+/g, '');
-        out += newlines.length > 0 ? newlines : ' ';
+        if (newlines.length > 0) {
+          for (let j = 0; j < segment.length; j++) if (segment[j] === '\n') append('\n', i + j);
+        } else append(' ', -1);
         i = end === -1 ? n : end + close.length;
         continue outer;
       }
@@ -427,7 +434,7 @@ function stripComments(text: string, ext: string): string {
         continue outer;
       }
     }
-    out += text[i];
+    append(text[i], i);
     i++;
   }
   return out;

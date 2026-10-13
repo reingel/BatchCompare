@@ -1,0 +1,20 @@
+body { margin: 0; color: var(--vscode-editor-foreground); background: var(--vscode-editor-background); font-family: var(--vscode-font-family); font-size: var(--vscode-font-size); height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
+nav { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 8px; border-bottom: 1px solid var(--vscode-panel-border); }
+button { font: inherit; color: var(--vscode-button-secondaryForeground); background: var(--vscode-button-secondaryBackground); border: 1px solid transparent; padding: 4px 9px; cursor: pointer; }
+button:hover { background: var(--vscode-button-secondaryHoverBackground); }
+button.active { color: var(--vscode-button-foreground); background: var(--vscode-button-background); }
+button:focus-visible { outline: 1px solid var(--vscode-focusBorder); }
+button:disabled { opacity: .5; cursor: default; }
+#status { margin-left: auto; }
+header { display: grid; grid-template-columns: 1fr 1fr; background: var(--vscode-editorGroupHeader-tabsBackground); }
+header div { padding: 8px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; direction: rtl; text-align: left; }
+#editors { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); flex: 1; min-height: 0; }
+#left-editor, #right-editor { min-width: 0; min-height: 0; overflow: hidden; }
+#left-editor { border-right: 1px solid var(--vscode-panel-border); }
+.diff-left { background: var(--vscode-diffEditor-removedLineBackground, #ff000018); }
+.diff-right { background: var(--vscode-diffEditor-insertedLineBackground, #00ff0018); }
+.diff-text-left { background: var(--vscode-diffEditor-removedTextBackground, #ff000033); }
+.diff-text-right { background: var(--vscode-diffEditor-insertedTextBackground, #00ff0033); }
+.diff-glyph-left::before { content: '−'; color: var(--vscode-gitDecoration-deletedResourceForeground, #f14c4c); }
+.diff-glyph-right::before { content: '+'; color: var(--vscode-gitDecoration-addedResourceForeground, #369432); }
+.alignment-zone { background: var(--vscode-diffEditor-diagonalFill, #80808018); }

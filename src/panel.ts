@@ -2,6 +2,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as vscode from 'vscode';
 import { CompareOptions, DEFAULT_COMPARE_OPTIONS, compareFolders, DiffNode } from './compare';
+import { createFileComparePanel } from './filePanel';
 
 /** 좌우를 맞바꾼다. 비교 결과는 대칭이므로 onlyLeft/onlyRight만 뒤집으면 된다. */
 function mirrorTree(nodes: DiffNode[]): void {
@@ -194,12 +195,7 @@ export function createComparePanel(
       const leftUri = vscode.Uri.joinPath(leftRoot, ...message.relPath.split('/'));
       const rightUri = vscode.Uri.joinPath(rightRoot, ...message.relPath.split('/'));
       if (message.type === 'openDiff') {
-        await vscode.commands.executeCommand(
-          'vscode.diff',
-          leftUri,
-          rightUri,
-          `${message.relPath} (${path.basename(leftRoot.fsPath)} ↔ ${path.basename(rightRoot.fsPath)})`
-        );
+        createFileComparePanel(context, leftUri, rightUri, options);
       } else if (message.type === 'openFile') {
         await vscode.commands.executeCommand(
           'vscode.open',

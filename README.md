@@ -42,8 +42,20 @@ The toolbar above the folder paths provides:
 
 ### Opening files
 
-- Click a file that exists on both sides to open it in VS Code's built-in diff editor.
+- Click a file that exists on both sides to open the extension's file compare view, inheriting the folder comparison's Whitespace and Comment options.
 - Click a file that exists on one side only to open it in a regular editor.
+
+### Comparing files
+
+- Select **two files** in the Explorer, right-click, and choose **Batch Compare: Files**.
+- With **one file** selected, that file becomes the right side and a dialog lets you pick the left file. You can also run **Batch Compare: Files** from the Command Palette to pick both files.
+- **Whitespace: ON** includes whitespace differences. **OFF** ignores spaces, tabs, and empty lines when matching lines (default: OFF).
+- **Comment: ON** highlights comment differences (default). **OFF** ignores recognized comment differences. Both sides always display the full original text, including comments, whitespace and blank lines; the switches only control difference highlighting and navigation.
+- The comparison uses Monaco editors with synchronized scrolling, aligned insertions/deletions, native selection/copy, and **Ctrl/Cmd+F** search. Language coloring uses installed VS Code TextMate grammars and the current theme's token colors, including `editor.tokenColorCustomizations`. Theme/font changes are reflected while the view is open. Language-server semantic coloring is not replicated.
+- Within a changed line, differing character ranges receive stronger removed/inserted backgrounds from the VS Code theme. Ignored whitespace and comments remain visible and are excluded from character highlights.
+- Comment filtering uses the left file's extension and the same lightweight scanner as folder comparison. It supports common C-style, Python/shell, HTML/XML, SQL, CSS and other comment styles. Unsupported extensions retain their comments; complex language syntax such as regex literals, nested comments, and template interpolation is not fully parsed.
+- Use **Previous / Next** to jump between difference blocks, and **Reload** to read the files again. Unsaved changes in open editors are included. The compare view is read-only.
+- **Open Original Diff** opens VS Code's standard diff editor. Use it for editing, binary files, files over 2 MB, or files over 20,000 lines. Very large, completely different text comparisons may show a single replacement block to keep the comparison responsive.
 
 ## Settings
 

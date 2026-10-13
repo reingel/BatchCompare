@@ -3,8 +3,43 @@ import { compareFolders } from './compare';
 import { cleanupExtractedDirs, getRepoRoot } from './git';
 import { createGitHistoryPanel } from './gitPanel';
 import { createComparePanel } from './panel';
+import { createFileComparePanel } from './filePanel';
 
 export function activate(context: vscode.ExtensionContext): void {
+  context.subscriptions.push(vscode.commands.registerCommand(
+    'batchCompare.compareFiles',
+    async (uri?: vscode.Uri, uris?: vscode.Uri[]) => {
+      try {
+        const selected = uris?.length ? uris : uri ? [uri] : [];
+        if (selected.length > 2) {
+          void vscode.window.showWarningMessage('Batch Compare: select one or two files.');
+          return;
+        }
+        let left: vscode.Uri;
+        let right: vscode.Uri;
+        if (selected.length === 2) [left, right] = selected;
+        else {
+          const pick = async (side: string) => (await vscode.window.showOpenDialog({
+            canSelectFiles: true, canSelectFolders: false, canSelectMany: false,
+            openLabel: `Select ${side} File`, title: `Select the ${side.toLowerCase()} file to compare`,
+          }))?.[0];
+          const rightFile = selected[0] ?? await pick('Right');
+          if (!rightFile) return;
+          const leftFile = await pick('Left');
+          if (!leftFile) return;
+          left = leftFile; right = rightFile;
+        }
+        const stats = await Promise.all([left, right].map(file => vscode.workspace.fs.stat(file)));
+        if (stats.some(stat => !(stat.type & vscode.FileType.File))) {
+          void vscode.window.showWarningMessage('Batch Compare: both selected items must be files.');
+          return;
+        }
+        createFileComparePanel(context, left, right);
+      } catch (error) {
+        void vscode.window.showErrorMessage(`Batch Compare: ${error instanceof Error ? error.message : String(error)}`);
+      }
+    }
+  ));
   context.subscriptions.push(
     vscode.commands.registerCommand(
       'batchCompare.compare',

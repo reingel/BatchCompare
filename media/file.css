@@ -6,9 +6,10 @@ button.active { color: var(--vscode-button-foreground); background: var(--vscode
 button:focus-visible { outline: 1px solid var(--vscode-focusBorder); }
 button:disabled { opacity: .5; cursor: default; }
 #status { margin-left: auto; }
+#performance-note { color: var(--vscode-descriptionForeground); font-size: .9em; }
 header { display: grid; grid-template-columns: 1fr 1fr; background: var(--vscode-editorGroupHeader-tabsBackground); }
 header div { padding: 8px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; direction: rtl; text-align: left; }
-#editors { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); flex: 1; min-height: 0; }
+#editors { position: relative; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); flex: 1; min-height: 0; }
 #left-editor, #right-editor { min-width: 0; min-height: 0; overflow: hidden; }
 #left-editor { border-right: 1px solid var(--vscode-panel-border); }
 .diff-left { background: var(--vscode-diffEditor-removedLineBackground, #ff000018); }
@@ -18,3 +19,9 @@ header div { padding: 8px; overflow: hidden; text-overflow: ellipsis; white-spac
 .diff-glyph-left::before { content: '−'; color: var(--vscode-gitDecoration-deletedResourceForeground, #f14c4c); }
 .diff-glyph-right::before { content: '+'; color: var(--vscode-gitDecoration-addedResourceForeground, #369432); }
 .alignment-zone { background: var(--vscode-diffEditor-diagonalFill, #80808018); }
+#loading-overlay { position: absolute; inset: 0; z-index: 100; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; background: var(--vscode-editor-background); }
+#loading-overlay.hidden { display: none; }
+.loading-spinner { width: 28px; height: 28px; border: 3px solid var(--vscode-panel-border, #80808040); border-top-color: var(--vscode-progressBar-background, #007acc); border-radius: 50%; animation: loading-spin .8s linear infinite; }
+#loading-progress { width: 260px; max-width: 80vw; height: 6px; accent-color: var(--vscode-progressBar-background, #007acc); }
+@keyframes loading-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .loading-spinner { animation: none; } }

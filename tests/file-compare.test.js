@@ -10,7 +10,7 @@ function load(source, vscode = {}) {
     require: name => name === 'vscode' ? vscode : require(name) });
   return module.exports;
 }
-const { projectLines, diffLines, compareFileText } = load('src/fileDiff.ts');
+const { projectLines, diffLines, compareFileText, compareFileTextAsync } = load('src/fileDiff.ts');
 const options = (whitespace, comments) => ({ includeWhitespace: whitespace, includeComments: comments });
 const compare = (a, b, opts, ext = 'ts') => diffLines(projectLines(a, ext, opts), projectLines(b, ext, opts));
 
@@ -87,6 +87,9 @@ test('file panel inherits options, refreshes dirty documents, rejects binary and
   createFileComparePanel({ extensionUri: uri('/extension') }, left, right, options(true, false));
   await receive({ type: 'ready' });
   assert.equal(posted.at(-1).rows.some(row => row.changed), false);
+  assert.deepEqual(posted.filter(message => message.type === 'progress').map(message => message.stage)
+    .filter((stage, i, stages) => i === 0 || stage !== stages[i - 1]),
+    ['Reading files', 'Comparing lines', 'Applying syntax highlighting', 'Displaying comparison']);
   await receive({ type: 'toggle', option: 'comment' });
   assert.equal(posted.at(-1).rows.some(row => row.changed), true);
   documents[1].getText = () => documents[0].getText();
@@ -97,7 +100,17 @@ test('file panel inherits options, refreshes dirty documents, rejects binary and
   assert.equal(posted.at(-1).type, 'error');
   await receive({ type: 'original' });
   assert.equal(commands[0][0], 'vscode.diff');
+  documents.push({ uri: left, getText: () => 'same' }, { uri: right, getText: () => 'same' });
+  const start = posted.length;
+  await Promise.all([receive({ type: 'reload' }), receive({ type: 'reload' })]);
+  const results = posted.slice(start).filter(message => message.type === 'result');
+  assert.equal(results.length, 1);
+  assert.equal(results[0].seq, Math.max(...posted.slice(start).map(message => message.seq)));
+  const pending = receive({ type: 'reload' });
   dispose();
+  const afterDispose = posted.length;
+  await pending;
+  assert.equal(posted.length, afterDispose);
   assert.equal(listenerDisposed, true);
 });
 
@@ -201,4 +214,25 @@ test('inline ranges preserve Unicode surrogate pairs and work on one-sided lines
   const inserted = compareFileText('a();', 'a();\n  b(); // added', 'cpp', options(false, false)).find(row => row.changed);
   assert.equal(inserted.leftChanges.length, 0);
   assert.deepEqual(highlightedText(inserted.right, inserted.rightChanges), ['b();']);
+});
+
+
+test('batched comparison reports increasing row counts, yields and preserves synchronous results', async () => {
+  const a = Array.from({ length: 850 }, (_, i) => `line ${i}`).join('\n');
+  const b = a.replace('line 250', 'changed 250');
+  for (const whitespace of [true, false]) for (const comments of [true, false]) {
+    const updates = [];
+    let yielded = false;
+    setImmediate(() => { yielded = true; });
+    const rows = await compareFileTextAsync(a, b, 'ts', options(whitespace, comments), (completed, total) => {
+      updates.push({ completed, total });
+    });
+    assert.equal(yielded, true);
+    assert.deepEqual(rows, compareFileText(a, b, 'ts', options(whitespace, comments)));
+    assert.equal(updates[0].completed, 0);
+    assert.equal(updates.at(-1).completed, updates.at(-1).total);
+    assert.ok(updates.length > 3);
+    assert.ok(updates.every((value, i) => i === 0 || value.completed > updates[i - 1].completed));
+  }
+  await assert.rejects(compareFileTextAsync(a, b, 'ts', options(true, true), () => { throw new Error('cancelled'); }), /cancelled/);
 });

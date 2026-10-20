@@ -15,6 +15,15 @@ export interface SyntaxData {
     lineHeight?: number; tabSize?: number; renderWhitespace?: string };
 }
 let wasm: Promise<void> | undefined;
+function editorOptions(): SyntaxData['editor'] {
+  const editor = vscode.workspace.getConfiguration('editor');
+  return {
+    fontFamily: editor.get<string>('fontFamily'), fontSize: editor.get<number>('fontSize'),
+    fontWeight: editor.get<string>('fontWeight'), fontLigatures: editor.get<boolean | string>('fontLigatures'),
+    lineHeight: editor.get<number>('lineHeight'),
+    tabSize: editor.get<number>('tabSize'), renderWhitespace: editor.get<string>('renderWhitespace'),
+  };
+}
 async function readTheme(filename: string, seen = new Set<string>()): Promise<ThemeData> {
   if (seen.has(filename)) return {};
   seen.add(filename);
@@ -30,8 +39,10 @@ async function readTheme(filename: string, seen = new Set<string>()): Promise<Th
 }
 
 /** Use installed VS Code TextMate grammars and the selected theme's actual token rules. */
-export async function getFileSyntax(context: vscode.ExtensionContext, uris: vscode.Uri[], texts: string[]): Promise<SyntaxData | undefined> {
+export async function getFileSyntax(context: vscode.ExtensionContext, uris: vscode.Uri[], texts: string[],
+  onProgress?: (completed: number, total: number) => void, tokenize = true): Promise<SyntaxData | undefined> {
   if (!vscode.extensions) return undefined;
+  if (!tokenize) return { colors: [], tokens: [], editor: editorOptions() };
   const grammars = new Map<string, { filename: string; contribution: GrammarContribution }>();
   const languages = new Map<string, string>();
   const selectedTheme = vscode.workspace.getConfiguration('workbench').get<string>('colorTheme');
@@ -85,12 +96,16 @@ export async function getFileSyntax(context: vscode.ExtensionContext, uris: vsco
   });
   try {
     const tokens: number[][][] = [];
+    const sourceLines = texts.map(text => text.replace(/\r\n?/g, '\n').split('\n'));
+    const total = sourceLines.reduce((sum, lines) => sum + lines.length, 0);
+    let completed = 0;
+    onProgress?.(0, total);
     for (let i = 0; i < texts.length; i++) {
       const document = await vscode.workspace.openTextDocument(uris[i]);
       const scope = languages.get(document.languageId);
       const grammar = scope ? await registry.loadGrammar(scope) : null;
       let state = INITIAL;
-      const lines = texts[i].replace(/\r\n?/g, '\n').split('\n');
+      const lines = sourceLines[i];
       const tokenized: number[][] = [];
       for (let line = 0; line < lines.length; line++) {
         if (!grammar) tokenized.push([0, 0]);
@@ -100,16 +115,14 @@ export async function getFileSyntax(context: vscode.ExtensionContext, uris: vsco
           tokenized.push(Array.from(result.tokens));
         }
         // Let the extension host process input while tokenizing large files.
-        if (line > 0 && line % 200 === 0) await new Promise<void>(resolve => setImmediate(resolve));
+        completed++;
+        if (completed % 200 === 0 || completed === total) {
+          onProgress?.(completed, total);
+          await new Promise<void>(resolve => setImmediate(resolve));
+        }
       }
       tokens.push(tokenized);
     }
-    const editor = vscode.workspace.getConfiguration('editor');
-    return { colors: registry.getColorMap(), tokens, editor: {
-      fontFamily: editor.get<string>('fontFamily'), fontSize: editor.get<number>('fontSize'),
-      fontWeight: editor.get<string>('fontWeight'), fontLigatures: editor.get<boolean | string>('fontLigatures'),
-      lineHeight: editor.get<number>('lineHeight'),
-      tabSize: editor.get<number>('tabSize'), renderWhitespace: editor.get<string>('renderWhitespace'),
-    } };
+    return { colors: registry.getColorMap(), tokens, editor: editorOptions() };
   } finally { registry.dispose(); }
 }

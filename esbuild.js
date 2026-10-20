@@ -4,9 +4,9 @@ const fs = require('node:fs');
 const watch = process.argv.includes('--watch');
 
 const buildOptions = {
-  entryPoints: ['src/extension.ts'],
+  entryPoints: ['src/extension.ts', 'src/fileCompareWorker.ts'],
   bundle: true,
-  outfile: 'dist/extension.js',
+  outdir: 'dist',
   external: ['vscode'],
   format: 'cjs',
   platform: 'node',

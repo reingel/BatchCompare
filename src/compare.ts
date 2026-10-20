@@ -377,17 +377,30 @@ const COMMENT_SYNTAX: Record<string, CommentSyntax> = {
 
 // 한 줄 주석(줄 끝의 inline 주석 포함)과 멀티라인(블록) 주석을 제거한다.
 // 문자열 리터럴 내부의 주석 기호는 주석으로 취급하지 않는다.
-export function stripComments(text: string, ext: string, sourceOffsets?: number[]): string {
+export interface SourceSpan { start: number; length: number; sourceStart: number }
+export function stripComments(text: string, ext: string, sourceOffsets?: number[], spans?: SourceSpan[]): string {
   const syntax = COMMENT_SYNTAX[ext];
   if (!syntax) {
     if (sourceOffsets) for (let i = 0; i < text.length; i++) sourceOffsets.push(i);
+    if (spans) spans.push({ start: 0, length: text.length, sourceStart: 0 });
     return text;
   }
   let out = '';
   const append = (value: string, start: number) => {
+    if (spans && value.length) {
+      const previous = spans[spans.length - 1];
+      if (previous && previous.start + previous.length === out.length &&
+        ((start < 0 && previous.sourceStart < 0) || previous.sourceStart + previous.length === start)) previous.length += value.length;
+      else spans.push({ start: out.length, length: value.length, sourceStart: start });
+    }
     out += value;
     if (sourceOffsets) for (let j = 0; j < value.length; j++) sourceOffsets.push(start < 0 ? -1 : start + j);
   };
+  const initials = [...new Set([...syntax.strings, ...syntax.line, ...syntax.block.map(pair => pair[0])]
+    .map(marker => marker[0]))];
+  const nextMarker = new RegExp(initials.map(escapeRegex).join('|'), 'g');
+  const stringEnds = new Map(syntax.strings.map(quote => [quote,
+    new RegExp([quote, ...(syntax.escape ? ['\\'] : [])].map(escapeRegex).join('|'), 'g')]));
   let i = 0;
   const n = text.length;
   outer: while (i < n) {
@@ -396,18 +409,21 @@ export function stripComments(text: string, ext: string, sourceOffsets?: number[
         append(quote, i);
         i += quote.length;
         while (i < n) {
-          if (syntax.escape && text[i] === '\\') {
-            append(text.slice(i, i + 2), i);
-            i += 2;
-            continue;
-          }
-          if (text.startsWith(quote, i)) {
-            append(quote, i);
-            i += quote.length;
+          const pattern = stringEnds.get(quote)!;
+          pattern.lastIndex = i;
+          const end = pattern.exec(text);
+          if (end && end[0] !== quote) {
+            const next = Math.min(n, end.index + 2);
+            append(text.slice(i, next), i);
+            i = next;
+          } else if (end) {
+            append(text.slice(i, end.index + quote.length), i);
+            i = end.index + quote.length;
             continue outer;
+          } else {
+            append(text.slice(i), i);
+            i = n;
           }
-          append(text[i], i);
-          i++;
         }
         continue outer;
       }
@@ -434,8 +450,11 @@ export function stripComments(text: string, ext: string, sourceOffsets?: number[
         continue outer;
       }
     }
-    append(text[i], i);
-    i++;
+    // Copy ordinary text in runs rather than allocating one string node per character.
+    nextMarker.lastIndex = i + 1;
+    const next = nextMarker.exec(text)?.index ?? n;
+    append(text.slice(i, next), i);
+    i = next;
   }
   return out;
 }

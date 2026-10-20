@@ -2,8 +2,9 @@ import * as path from 'path';
 import * as crypto from 'crypto';
 import * as vscode from 'vscode';
 import { CompareOptions, DEFAULT_COMPARE_OPTIONS, isBinary } from './compare';
-import { compareFileText } from './fileDiff';
+import { compareFileTextAsync } from './fileDiff';
 import { getFileSyntax } from './fileSyntax';
+import { compactRows, MAX_FILE_BYTES, MAX_FILE_LINES, RenderRow, startFileComparison } from './fileComparison';
 
 export function createFileComparePanel(
   context: vscode.ExtensionContext, left: vscode.Uri, right: vscode.Uri,
@@ -29,33 +30,72 @@ export function createFileComparePanel(
       <button id="previous">↑ Previous</button><button id="next">↓ Next</button>
       <button id="reload">⟳ Reload</button><button id="original">Open Original Diff</button>
       <span id="status" role="status"></span>
+      <span id="performance-note"></span>
     </nav><header><div id="left-name"></div><div id="right-name"></div></header>
-    <main id="editors"><div id="left-editor" aria-label="Left file"></div><div id="right-editor" aria-label="Right file"></div></main>
+    <main id="editors"><div id="left-editor" aria-label="Left file"></div><div id="right-editor" aria-label="Right file"></div>
+    <div id="loading-overlay" role="status" aria-live="polite">
+      <div class="loading-spinner" aria-hidden="true"></div>
+      <div id="loading-text">Reading files…</div><progress id="loading-progress" aria-label="Comparison progress"></progress>
+    </div></main>
     <script nonce="${nonce}" src="${asset('file-editor.js')}"></script></body></html>`;
   let generation = 0;
   let disposed = false;
+  let cancelComparison: (() => void) | undefined;
+  let cached: { texts: string[]; options: CompareOptions; rows: RenderRow[] } | undefined;
   const refresh = async () => {
     const current = ++generation;
+    cancelComparison?.(); cancelComparison = undefined;
     const snapshot = { ...options };
+    const report = async (stage: string, completed?: number, total?: number) => {
+      if (disposed || current !== generation) throw new Error('Comparison superseded');
+      await panel.webview.postMessage({ type: 'progress', seq: current, stage, completed, total });
+    };
+    const progress = (stage: string) => (completed: number, total: number) => {
+      if (disposed || current !== generation) throw new Error('Comparison superseded');
+      void panel.webview.postMessage({ type: 'progress', seq: current, stage, completed, total });
+    };
     try {
+      await report('Reading files');
       const documents = [left, right].map(uri => vscode.workspace.textDocuments.find(doc => doc.uri.toString() === uri.toString()));
       const buffers = await Promise.all([left, right].map((uri, i) => documents[i]
         ? Promise.resolve(Buffer.from(documents[i]!.getText(), 'utf8'))
         : vscode.workspace.fs.readFile(uri).then(bytes => Buffer.from(bytes))));
       if (disposed || current !== generation) return;
       if (buffers.some(isBinary)) throw new Error('Binary files cannot be shown here. Use Open Original Diff.');
-      if (buffers.some(buf => buf.length > 2 * 1024 * 1024)) throw new Error('Files over 2 MB cannot be shown here. Use Open Original Diff.');
+      if (buffers.some(buf => buf.length > MAX_FILE_BYTES)) throw new Error('Files over 20 MB cannot be shown here. Use Open Original Diff.');
       const ext = path.extname(left.fsPath).slice(1).toLowerCase();
       const texts = buffers.map(buf => buf.toString('utf8'));
-      if (texts.some(text => text.split(/\r\n?|\n/).length > 20000)) throw new Error('Files over 20,000 lines cannot be shown here. Use Open Original Diff.');
-      const rows = compareFileText(texts[0], texts[1], ext, snapshot);
-      let syntax;
-      try { syntax = await getFileSyntax(context, [left, right], texts); } catch { /* plain text remains usable if a grammar fails */ }
+      const lineCounts = texts.map(text => text.split(/\r\n?|\n/).length);
+      if (lineCounts.some(count => count > MAX_FILE_LINES)) throw new Error('Files over 200,000 lines cannot be shown here. Use Open Original Diff.');
+      const largeFile = buffers.some(buf => buf.length > 2 * 1024 * 1024) || lineCounts.some(count => count > 20000);
+      await report('Comparing lines');
+      await new Promise<void>(resolve => setImmediate(resolve));
       if (disposed || current !== generation) return;
-      void panel.webview.postMessage({ type: 'result', rows, texts, syntax, options: snapshot, left: left.fsPath, right: right.fsPath });
+      let rows: RenderRow[];
+      if (cached && texts.every((text, i) => text === cached!.texts[i]) &&
+        snapshot.includeWhitespace === cached.options.includeWhitespace && snapshot.includeComments === cached.options.includeComments) {
+        rows = cached.rows;
+      } else if (largeFile) {
+        const job = startFileComparison(vscode.Uri.joinPath(context.extensionUri, 'dist', 'fileCompareWorker.js').fsPath,
+          texts, ext, snapshot, progress('Comparing lines'));
+        cancelComparison = job.cancel;
+        try { rows = await job.result; }
+        finally { if (cancelComparison === job.cancel) cancelComparison = undefined; }
+      } else {
+        rows = compactRows(await compareFileTextAsync(texts[0], texts[1], ext, snapshot, progress('Comparing lines')));
+      }
+      if (disposed || current !== generation) return;
+      cached = { texts, options: snapshot, rows };
+      await report('Applying syntax highlighting');
+      let syntax;
+      try { syntax = await getFileSyntax(context, [left, right], texts, progress('Applying syntax highlighting'), !largeFile); } catch { /* plain text remains usable if a grammar fails */ }
+      if (disposed || current !== generation) return;
+      await report('Displaying comparison');
+      if (disposed || current !== generation) return;
+      void panel.webview.postMessage({ type: 'result', seq: current, rows, texts, syntax, largeFile, options: snapshot, left: left.fsPath, right: right.fsPath });
     } catch (error) {
       if (!disposed && current === generation) void panel.webview.postMessage({
-        type: 'error', options: snapshot, message: error instanceof Error ? error.message : String(error),
+        type: 'error', seq: current, options: snapshot, message: error instanceof Error ? error.message : String(error),
       });
     }
   };
@@ -73,6 +113,7 @@ export function createFileComparePanel(
       event.affectsConfiguration('workbench.colorCustomizations')) void refresh();
   });
   panel.onDidDispose(() => {
+    cancelComparison?.(); cached = undefined;
     disposed = true; generation++; listener.dispose(); themeListener?.dispose(); configListener?.dispose();
   });
 }

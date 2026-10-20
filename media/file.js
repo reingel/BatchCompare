@@ -13,15 +13,41 @@ const workerURL = URL.createObjectURL(new Blob([__EDITOR_WORKER_SOURCE__], { typ
 self.MonacoEnvironment = { getWorker: () => new Worker(workerURL) };
 const vscode = acquireVsCodeApi();
 const status = document.getElementById('status');
+let sequence = 0, renderVersion = 0;
+function showLoading(stage = 'Comparing lines', completed, total) {
+  renderVersion++;
+  document.getElementById('loading-overlay').classList.toggle('hidden', false);
+  document.getElementById('editors').setAttribute('aria-busy', 'true');
+  const text = total > 0 ? `${stage}… ${completed.toLocaleString()} / ${total.toLocaleString()} lines` : `${stage}…`;
+  document.getElementById('loading-text').textContent = text;
+  status.textContent = text;
+  const progress = document.getElementById('loading-progress');
+  if (total > 0) { progress.max = total; progress.value = completed; }
+  else progress.removeAttribute('value');
+  for (const id of ['whitespace', 'comment', 'reload', 'previous', 'next']) document.getElementById(id).disabled = true;
+}
+function hideLoading() {
+  document.getElementById('loading-overlay').classList.toggle('hidden', true);
+  document.getElementById('editors').setAttribute('aria-busy', 'false');
+  for (const id of ['whitespace', 'comment', 'reload']) document.getElementById(id).disabled = false;
+}
+// Allow the overlay to paint before Monaco creates models and decorations.
+const nextPaint = () => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
 const defaults = {
   readOnly: true, domReadOnly: true, automaticLayout: true,
-  minimap: { enabled: false }, scrollBeyondLastLine: false,
+  minimap: { enabled: false },
+  scrollBeyondLastLine: false,
   wordWrap: 'off', renderLineHighlight: 'all', glyphMargin: true,
   folding: false, lineNumbersMinChars: 4, lineDecorationsWidth: 8,
-  contextmenu: true, overviewRulerLanes: 0, overviewRulerBorder: false, renderWhitespace: 'selection',
+  contextmenu: true, overviewRulerLanes: 3, overviewRulerBorder: false, renderWhitespace: 'selection',
   ariaLabel: 'Read-only file comparison', fixedOverflowWidgets: true,
 };
-const editors = ['left', 'right'].map(side => monaco.editor.create(document.getElementById(`${side}-editor`), defaults));
+const editors = ['left', 'right'].map(side => monaco.editor.create(document.getElementById(`${side}-editor`), {
+  ...defaults,
+  overviewRulerLanes: side === 'right' ? 3 : 0,
+  hideCursorInOverviewRuler: true,
+  scrollbar: { vertical: 'visible', verticalScrollbarSize: side === 'right' ? 40 : 14 },
+}));
 const languageIds = ['batch-source-left', 'batch-source-right'];
 languageIds.forEach(id => monaco.languages.register({ id }));
 const decorations = editors.map(editor => editor.createDecorationsCollection());
@@ -68,6 +94,8 @@ function applyTheme(syntax = currentSyntax) {
       'scrollbarSlider.hoverBackground': cssColor('scrollbarSlider-hoverBackground', '#646464b3'),
       'scrollbarSlider.activeBackground': cssColor('scrollbarSlider-activeBackground', '#bfbfbf66'),
       'scrollbar.shadow': cssColor('scrollbar-shadow', '#000000'),
+      'editorOverviewRuler.addedForeground': cssColor('editorOverviewRuler-addedForeground', '#369432'),
+      'editorOverviewRuler.deletedForeground': cssColor('editorOverviewRuler-deletedForeground', '#f14c4c'),
     },
   });
   monaco.editor.setTheme('batch-vscode');
@@ -109,6 +137,13 @@ function setSource(texts, syntax) {
     if (state) editor.restoreViewState(state);
   });
 }
+function diffMarkers(side) {
+  const kind = side === 'left' ? 'deleted' : 'added';
+  return {
+    overviewRuler: { color: { id: `editorOverviewRuler.${kind}Foreground` },
+      position: side === 'left' ? monaco.editor.OverviewRulerLane.Left : monaco.editor.OverviewRulerLane.Right },
+  };
+}
 function renderDiff(rows) {
   changes = []; selected = -1;
   let inChange = false;
@@ -119,22 +154,33 @@ function renderDiff(rows) {
   editors.forEach((editor, i) => {
     const side = i === 0 ? 'left' : 'right';
     const highlights = [];
-    let previous = 0, missing = 0;
+    let block;
+    let previous = 0, missing = 0, missingChanged = false;
     editor.changeViewZones(accessor => {
       zones[i].forEach(zone => accessor.removeZone(zone)); zones[i] = [];
       const flush = () => {
         if (!missing) return;
         const node = document.createElement('div'); node.className = 'alignment-zone';
         zones[i].push(accessor.addZone({ afterLineNumber: previous, heightInLines: missing, domNode: node }));
-        missing = 0;
+        // Mark insertions/deletions even on the pane that only has an alignment gap.
+        if (missingChanged) highlights.push({ range: new monaco.Range(Math.max(1, previous), 1, Math.max(1, previous), 1),
+          options: diffMarkers(i === 0 ? 'right' : 'left') });
+        missing = 0; missingChanged = false;
       };
       for (const row of rows) {
         const line = row[side];
-        if (!line) { missing++; continue; }
+        if (!line) { missing++; missingChanged ||= row.changed; continue; }
         flush(); previous = line.number;
-        if (row.changed) highlights.push({ range: new monaco.Range(line.number, 1, line.number, 1), options: {
-          isWholeLine: true, className: `diff-${side}`, glyphMarginClassName: `diff-glyph-${side}`,
-        } });
+        if (row.changed) {
+          if (block && block.range.endLineNumber + 1 === line.number) block.range.endLineNumber = line.number;
+          else {
+            block = { range: new monaco.Range(line.number, 1, line.number, 1000000000), options: {
+              isWholeLine: true, className: `diff-${side}`, glyphMarginClassName: `diff-glyph-${side}`,
+              ...diffMarkers(side),
+            } };
+            highlights.push(block);
+          }
+        } else block = undefined;
         for (const range of row[`${side}Changes`] ?? []) highlights.push({
           range: new monaco.Range(line.number, range.startColumn, line.number, range.endColumn),
           options: { inlineClassName: `diff-text-${side}`, inlineClassNameAffectsLetterSpacing: false },
@@ -142,6 +188,19 @@ function renderDiff(rows) {
       }
       flush();
     });
+    if (side === 'right') {
+      // Project left-side replacements onto the single right-side overview.
+      let removed;
+      for (const row of rows) {
+        if (!row.changed || !row.left || !row.right) { removed = undefined; continue; }
+        const number = row.right.number;
+        if (removed && removed.range.endLineNumber + 1 === number) removed.range.endLineNumber = number;
+        else {
+          removed = { range: new monaco.Range(number, 1, number, 1000000000), options: diffMarkers('left') };
+          highlights.push(removed);
+        }
+      }
+    }
     decorations[i].set(highlights);
     editor.render(true);
   });
@@ -163,31 +222,51 @@ for (const option of ['whitespace', 'comment']) document.getElementById(option).
   editors.forEach(editor => editor.render(true));
   changes = []; selected = -1;
   for (const id of ['previous', 'next']) document.getElementById(id).disabled = true;
-  status.textContent = 'Comparing…'; vscode.postMessage({ type: 'toggle', option });
+  showLoading(); vscode.postMessage({ type: 'toggle', option });
 });
-document.getElementById('reload').addEventListener('click', () => { status.textContent = 'Comparing…'; vscode.postMessage({ type: 'reload' }); });
+document.getElementById('reload').addEventListener('click', () => { showLoading('Reading files'); vscode.postMessage({ type: 'reload' }); });
 document.getElementById('original').addEventListener('click', () => vscode.postMessage({ type: 'original' }));
 document.getElementById('previous').addEventListener('click', () => navigate(-1));
 document.getElementById('next').addEventListener('click', () => navigate(1));
-window.addEventListener('message', ({ data: message }) => {
-  if (!['result', 'error'].includes(message.type)) return;
+window.addEventListener('message', async ({ data: message }) => {
+  if (!['progress', 'result', 'error'].includes(message.type)) return;
+  if (message.seq !== undefined) {
+    if (message.seq < sequence) return;
+    sequence = message.seq;
+  }
+  if (message.type === 'progress') {
+    showLoading(message.stage, message.completed, message.total);
+    return;
+  }
   for (const [id, enabled] of [['whitespace', message.options.includeWhitespace], ['comment', message.options.includeComments]]) {
     const button = document.getElementById(id);
     button.textContent = `${id === 'comment' ? 'Comment' : 'Whitespace'}: ${enabled ? 'ON' : 'OFF'}`;
     button.classList.toggle('active', enabled); button.setAttribute('aria-pressed', String(enabled));
   }
   if (message.type === 'error') {
+    renderVersion++;
+    hideLoading();
+    document.getElementById('performance-note').textContent = '';
     status.textContent = message.message;
     changes = []; decorations.forEach(decoration => decoration.clear());
     for (const id of ['previous', 'next']) document.getElementById(id).disabled = true;
     return;
   }
-  document.getElementById('left-name').textContent = message.left;
-  document.getElementById('right-name').textContent = message.right;
-  applyTheme(message.syntax); setSource(message.texts, message.syntax); renderDiff(message.rows);
+  showLoading('Displaying comparison');
+  const version = renderVersion;
+  await nextPaint();
+  if (version !== renderVersion) return;
+  try {
+    document.getElementById('left-name').textContent = message.left;
+    document.getElementById('right-name').textContent = message.right;
+    document.getElementById('performance-note').textContent = message.largeFile ? 'Large file: syntax colors disabled for speed' : '';
+    applyTheme(message.syntax); setSource(message.texts, message.syntax); renderDiff(message.rows);
+  } catch (error) {
+    status.textContent = `Unable to display comparison: ${error.message}`;
+  } finally { hideLoading(); }
 });
 window.addEventListener('unload', () => {
   providers.forEach(provider => provider.dispose()); editors.forEach(editor => editor.dispose());
   models.forEach(model => model.dispose()); URL.revokeObjectURL(workerURL);
 });
-status.textContent = 'Comparing…'; vscode.postMessage({ type: 'ready' });
+showLoading('Reading files'); vscode.postMessage({ type: 'ready' });

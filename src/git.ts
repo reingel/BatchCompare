@@ -1,7 +1,8 @@
-import { execFile, spawn } from 'child_process';
+import { execFile } from 'child_process';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
+import * as process from 'process';
 
 export interface GitCommit {
   hash: string;
@@ -16,12 +17,12 @@ export interface GitCommit {
 // vsix 배포 후에도 정리할 수 있도록, 이 세션에서 추출한 임시 폴더를 기록해 둔다.
 const extractedDirs = new Set<string>();
 
-function runGit(repoPath: string, args: string[]): Promise<string> {
+function runGit(repoPath: string, args: string[], env?: NodeJS.ProcessEnv): Promise<string> {
   return new Promise((resolve, reject) => {
     execFile(
       'git',
       ['-C', repoPath, ...args],
-      { maxBuffer: 64 * 1024 * 1024 },
+      { maxBuffer: 64 * 1024 * 1024, env },
       (err, stdout) => {
         if (err) {
           reject(err);
@@ -116,38 +117,19 @@ export async function extractCommit(
   const dir = path.join(tempRoot, repoName, shortHash.replace(/[^\w.-]/g, '_'));
   await fs.promises.mkdir(dir, { recursive: true });
 
-  await new Promise<void>((resolve, reject) => {
-    const git = spawn('git', ['-C', repoPath, 'archive', '--format=tar', hash]);
-    const tar = spawn('tar', ['-x', '-C', dir]);
-    let gitErr = '';
-    let tarErr = '';
-    git.stderr.on('data', (d) => (gitErr += d));
-    tar.stderr.on('data', (d) => (tarErr += d));
-    // git이 실패하면 tar만 성공해도 추출 성공으로 처리하지 않는다.
-    const gitDone = new Promise<void>((done, fail) => {
-      git.on('error', fail);
-      git.on('close', (code) => {
-        if (code === 0) {
-          done();
-        } else {
-          fail(new Error(`git archive failed: ${gitErr.trim() || `exit ${code}`}`));
-        }
-      });
-    });
-    const tarDone = new Promise<void>((done, fail) => {
-      tar.on('error', fail);
-      tar.on('close', (code) => {
-        if (code === 0) {
-          done();
-        } else {
-          fail(new Error(`tar failed: ${tarErr.trim() || `exit ${code}`}`));
-        }
-      });
-    });
-    tar.stdin.on('error', reject);
-    git.stdout.pipe(tar.stdin);
-    Promise.all([gitDone, tarDone]).then(() => resolve(), reject);
-  });
+  // 외부 tar는 OS마다 동작이 달라(Windows bsdtar/GNU tar) 쓰지 않는다.
+  // 임시 index에 커밋 트리를 읽어 checkout-index로 꺼내므로 저장소의 index와 작업 트리는 그대로다.
+  const env = { ...process.env, GIT_INDEX_FILE: path.join(tempRoot, 'index') };
+  // --prefix는 문자열을 그대로 앞에 붙이므로 끝에 '/'가 있어야 하고, Windows 구분자도 '/'로 통일한다.
+  const prefix = dir.split(path.sep).join('/') + '/';
+  try {
+    await runGit(repoPath, ['read-tree', hash], env);
+    await runGit(repoPath, ['checkout-index', '-a', '-f', `--prefix=${prefix}`], env);
+  } catch (err) {
+    throw new Error(`git extract failed: ${(err as Error).message}`);
+  } finally {
+    await fs.promises.rm(env.GIT_INDEX_FILE, { force: true });
+  }
 
   return dir;
 }

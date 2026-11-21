@@ -52,7 +52,7 @@ const languageIds = ['batch-source-left', 'batch-source-right'];
 languageIds.forEach(id => monaco.languages.register({ id }));
 const decorations = editors.map(editor => editor.createDecorationsCollection());
 let zones = [[], []], providers = [], models = [], changes = [], selected = -1;
-let syncing = false;
+let syncing = false, focused = false;
 editors.forEach((editor, i) => editor.onDidScrollChange(event => {
   if (syncing) return;
   syncing = true;
@@ -228,7 +228,23 @@ document.getElementById('reload').addEventListener('click', () => { showLoading(
 document.getElementById('original').addEventListener('click', () => vscode.postMessage({ type: 'original' }));
 document.getElementById('previous').addEventListener('click', () => navigate(-1));
 document.getElementById('next').addEventListener('click', () => navigate(1));
+const altKey = /Mac|iPhone|iPad/.test(navigator.platform) ? '⌥' : 'Alt+';
+for (const [id, arrow, label] of [['previous', '↑', 'Previous difference'], ['next', '↓', 'Next difference']]) {
+  document.getElementById(id).title = `${label} (${altKey}${arrow})`;
+}
+// Monaco의 Alt+화살표(줄 이동)보다 먼저 받도록 capture 단계에서 처리한다.
+window.addEventListener('keydown', event => {
+  if (!event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
+  if (event.key !== 'ArrowUp' && event.key !== 'ArrowDown') return;
+  event.preventDefault(); event.stopPropagation();
+  const button = document.getElementById(event.key === 'ArrowUp' ? 'previous' : 'next');
+  if (!button.disabled) navigate(event.key === 'ArrowUp' ? -1 : 1);
+}, true);
 window.addEventListener('message', async ({ data: message }) => {
+  if (message.type === 'navigate') {
+    if (!document.getElementById(message.direction < 0 ? 'previous' : 'next').disabled) navigate(message.direction);
+    return;
+  }
   if (!['progress', 'result', 'error'].includes(message.type)) return;
   if (message.seq !== undefined) {
     if (message.seq < sequence) return;
@@ -266,6 +282,8 @@ window.addEventListener('message', async ({ data: message }) => {
     });
     document.getElementById('performance-note').textContent = message.largeFile ? 'Large file: syntax colors disabled for speed' : '';
     applyTheme(message.syntax); setSource(message.texts, message.syntax); renderDiff(message.rows);
+    // 창이 열리자마자 webview 안의 단축키가 동작하도록 처음 표시할 때 오른쪽 에디터에 포커스를 둔다.
+    if (!focused) { focused = true; editors[1].focus(); }
   } catch (error) {
     status.textContent = `Unable to display comparison: ${error.message}`;
   } finally { hideLoading(); }

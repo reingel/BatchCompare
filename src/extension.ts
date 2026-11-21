@@ -3,9 +3,14 @@ import { compareFolders } from './compare';
 import { cleanupExtractedDirs, getRepoRoot } from './git';
 import { createGitHistoryPanel } from './gitPanel';
 import { createComparePanel } from './panel';
-import { createFileComparePanel } from './filePanel';
+import { createFileComparePanel, navigateActiveFilePanel } from './filePanel';
 
 export function activate(context: vscode.ExtensionContext): void {
+  // 비교 창이 활성 탭이면 포커스가 webview 밖에 있어도 단축키가 동작하도록 VS Code 명령으로도 등록한다.
+  context.subscriptions.push(
+    vscode.commands.registerCommand('batchCompare.previousDifference', () => navigateActiveFilePanel(-1)),
+    vscode.commands.registerCommand('batchCompare.nextDifference', () => navigateActiveFilePanel(1))
+  );
   context.subscriptions.push(vscode.commands.registerCommand(
     'batchCompare.compareFiles',
     async (uri?: vscode.Uri, uris?: vscode.Uri[]) => {

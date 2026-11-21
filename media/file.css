@@ -6,6 +6,10 @@ button.active { color: var(--vscode-button-foreground); background: var(--vscode
 button:focus-visible { outline: 1px solid var(--vscode-focusBorder); }
 button:disabled { opacity: .5; cursor: default; }
 #status { margin-left: auto; }
+.nav-group { display: inline-flex; gap: 2px; margin: 0 4px; }
+/* 토글 ON(주 버튼 색)과 구분되도록 반투명한 녹색을 살짝 깐다. 배경이 비치므로 글자는 테마 글자색을 따른다. */
+button.nav { color: var(--vscode-editor-foreground); background: rgba(46, 125, 50, 0.22); font-weight: 600; padding: 4px 12px; }
+button.nav:hover:not(:disabled) { background: rgba(46, 125, 50, 0.35); }
 #performance-note { color: var(--vscode-descriptionForeground); font-size: .9em; }
 header { display: grid; grid-template-columns: 1fr 1fr; background: var(--vscode-editorGroupHeader-tabsBackground); }
 header div { padding: 8px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; direction: rtl; text-align: left; }

@@ -7,6 +7,13 @@ import { compareFileTextAsync } from './fileDiff';
 import { getFileSyntax } from './fileSyntax';
 import { compactRows, MAX_FILE_BYTES, MAX_FILE_LINES, RenderRow, startFileComparison } from './fileComparison';
 
+const filePanels = new Set<vscode.WebviewPanel>();
+
+export function navigateActiveFilePanel(direction: 1 | -1): void {
+  const panel = [...filePanels].find(item => item.active);
+  void panel?.webview.postMessage({ type: 'navigate', direction });
+}
+
 export function createFileComparePanel(
   context: vscode.ExtensionContext, left: vscode.Uri, right: vscode.Uri,
   initialOptions: CompareOptions = DEFAULT_COMPARE_OPTIONS
@@ -18,6 +25,7 @@ export function createFileComparePanel(
       enableScripts: true, retainContextWhenHidden: true,
       localResourceRoots: [vscode.Uri.joinPath(context.extensionUri, 'media')],
     });
+  filePanels.add(panel);
   const nonce = crypto.randomBytes(16).toString('hex');
   const asset = (name: string) => panel.webview.asWebviewUri(vscode.Uri.joinPath(context.extensionUri, 'media', name));
   panel.webview.html = `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8">
@@ -28,10 +36,11 @@ export function createFileComparePanel(
     <nav aria-label="Comparison options">
       <button id="whitespace" title="ON: include whitespace differences; OFF: ignore whitespace differences">Whitespace</button>
       <button id="comment" title="ON: highlight comment differences; OFF: ignore comment differences (always displayed)">Comment</button>
-      <button id="previous">↑ Previous</button><button id="next">↓ Next</button>
-      <button id="reload">⟳ Reload</button><button id="original">Open Original Diff</button>
+      <span class="nav-group"><button id="previous" class="nav" aria-keyshortcuts="Alt+ArrowUp">↑ Previous</button><button id="next" class="nav" aria-keyshortcuts="Alt+ArrowDown">↓ Next</button></span>
+      <button id="original">Open Original Diff</button>
       <span id="status" role="status"></span>
       <span id="performance-note"></span>
+      <button id="reload">⟳ Reload</button>
     </nav><header><div id="left-name"></div><div id="right-name"></div></header>
     <main id="editors"><div id="left-editor" aria-label="Left file"></div><div id="right-editor" aria-label="Right file"></div>
     <div id="loading-overlay" role="status" aria-live="polite">
@@ -119,6 +128,7 @@ export function createFileComparePanel(
       event.affectsConfiguration('workbench.colorCustomizations')) void refresh();
   });
   panel.onDidDispose(() => {
+    filePanels.delete(panel);
     cancelComparison?.(); cached = undefined;
     disposed = true; generation++; listener.dispose(); themeListener?.dispose(); configListener?.dispose();
   });

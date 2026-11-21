@@ -26,6 +26,26 @@
       {
         "command": "batchCompare.gitCompare",
         "title": "Batch Compare: Git History"
+      },
+      {
+        "command": "batchCompare.previousDifference",
+        "title": "Batch Compare: Previous Difference"
+      },
+      {
+        "command": "batchCompare.nextDifference",
+        "title": "Batch Compare: Next Difference"
+      }
+    ],
+    "keybindings": [
+      {
+        "command": "batchCompare.previousDifference",
+        "key": "alt+up",
+        "when": "activeWebviewPanelId == 'batchCompare.file'"
+      },
+      {
+        "command": "batchCompare.nextDifference",
+        "key": "alt+down",
+        "when": "activeWebviewPanelId == 'batchCompare.file'"
       }
     ],
     "menus": {
@@ -50,6 +70,14 @@
         {
           "command": "batchCompare.compare",
           "when": "false"
+        },
+        {
+          "command": "batchCompare.previousDifference",
+          "when": "activeWebviewPanelId == 'batchCompare.file'"
+        },
+        {
+          "command": "batchCompare.nextDifference",
+          "when": "activeWebviewPanelId == 'batchCompare.file'"
         }
       ]
     },

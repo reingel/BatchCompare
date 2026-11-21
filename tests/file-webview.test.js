@@ -13,13 +13,13 @@ test('Comment ON/OFF replaces highlights on repeated results even though Monaco 
     return elements.get(id);
   };
   let created = 0, disposedProviders = 0;
-  const registered = [], editorOptions = [];
+  const registered = [], editorOptions = [], focusedEditors = [];
   const editorApi = {
     create: (_element, options) => {
       editorOptions.push(options);
       const i = created++;
       return {
-        onDidScrollChange() {}, setScrollPosition() {}, setPosition() {}, revealLineInCenter() {},
+        onDidScrollChange() {}, setScrollPosition() {}, focus: () => { focusedEditors.push(i); }, setPosition() {}, revealLineInCenter() {},
         createDecorationsCollection: () => ({ set: value => { highlights[i] = value; }, clear: () => { highlights[i] = []; } }),
         saveViewState: () => ({}), restoreViewState() {}, setModel() {}, updateOptions() {}, dispose() {}, render() {},
         changeViewZones: callback => callback({ removeZone() {}, addZone: () => 'zone' }),
@@ -51,7 +51,7 @@ test('Comment ON/OFF replaces highlights on repeated results even though Monaco 
   });
   const sent = [];
   vm.runInNewContext(outputFiles[0].text, {
-    mockMonaco: monaco, self: {}, requestAnimationFrame: callback => callback(),
+    mockMonaco: monaco, self: {}, navigator: { platform: 'MacIntel' }, requestAnimationFrame: callback => callback(),
     document: { body: element('body'), getElementById: element, createElement: () => ({}) },
     window: { addEventListener: (type, callback) => { listeners[type] = callback; } },
     getComputedStyle: () => ({ getPropertyValue: () => 'rgba(121, 121, 121, 0.4)' }),
@@ -96,6 +96,22 @@ test('Comment ON/OFF replaces highlights on repeated results even though Monaco 
   assert.equal(highlights[1].length, 2);
   assert.equal(registered.length, 2);
   assert.equal(disposedProviders, 4);
+  assert.equal(element('next').title, 'Next difference (⌥↓)');
+  let prevented = 0;
+  const key = (code, extra = {}) => listeners.keydown({ key: code, altKey: true, ...extra,
+    preventDefault: () => prevented++, stopPropagation() {} });
+  key('ArrowDown');
+  assert.equal(element('status').textContent, 'Difference 1 of 1');
+  key('ArrowUp', { shiftKey: true });
+  assert.equal(prevented, 1);
+  element('status').textContent = '';
+  key('ArrowUp');
+  assert.equal(element('status').textContent, 'Difference 1 of 1');
+  assert.equal(prevented, 2);
+  element('status').textContent = '';
+  await listeners.message({ data: { type: 'navigate', direction: 1 } });
+  assert.equal(element('status').textContent, 'Difference 1 of 1');
+  assert.deepEqual([...focusedEditors], [1]);
   const inline = result(true, true);
   inline.data.rows[0].leftChanges = [{ startColumn: 6, endColumn: 7 }];
   inline.data.rows[0].rightChanges = [{ startColumn: 6, endColumn: 7 }];

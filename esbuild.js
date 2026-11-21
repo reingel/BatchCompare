@@ -28,7 +28,7 @@ const buildOptions = {
   fs.copyFileSync('node_modules/vscode-oniguruma/release/onig.wasm', 'media/onig.wasm');
   const notices = [
     ['monaco-editor', 'LICENSE'], ['vscode-textmate', 'LICENSE.md'],
-    ['vscode-oniguruma', 'LICENSE.txt'], ['jsonc-parser', 'LICENSE.md'],
+    ['vscode-oniguruma', 'LICENSE.txt'], ['jsonc-parser', 'LICENSE.md'], ['iconv-lite', 'LICENSE'],
   ].map(([name, license]) => `${name}\n\n${fs.readFileSync(`node_modules/${name}/${license}`, 'utf8')}`);
   fs.writeFileSync('media/third-party-notices.txt', notices.join('\n\n----------------------------------------\n\n'));
   if (watch) {

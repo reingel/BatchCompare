@@ -1,6 +1,7 @@
 import * as crypto from 'crypto';
 import * as fs from 'fs';
 import * as path from 'path';
+import { decodeText, hasUtf16Bom } from './encoding';
 
 export type DiffStatus = 'same' | 'modified' | 'onlyLeft' | 'onlyRight';
 
@@ -270,12 +271,16 @@ async function filesEqual(
   }
   const ext = path.extname(leftPath).slice(1).toLowerCase();
   return (
-    normalizeContent(leftBuf.toString('utf8'), ext, options) ===
-    normalizeContent(rightBuf.toString('utf8'), ext, options)
+    normalizeContent(decodeText(leftBuf), ext, options) ===
+    normalizeContent(decodeText(rightBuf), ext, options)
   );
 }
 
 export function isBinary(buf: Buffer): boolean {
+  // UTF-16 텍스트는 0 바이트를 포함하지만 바이너리가 아니다.
+  if (hasUtf16Bom(buf)) {
+    return false;
+  }
   const len = Math.min(buf.length, 8000);
   for (let i = 0; i < len; i++) {
     if (buf[i] === 0) {

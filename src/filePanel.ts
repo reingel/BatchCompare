@@ -2,6 +2,7 @@ import * as path from 'path';
 import * as crypto from 'crypto';
 import * as vscode from 'vscode';
 import { CompareOptions, DEFAULT_COMPARE_OPTIONS, isBinary } from './compare';
+import { detectAndDecode, editorEncodingLabel } from './encoding';
 import { compareFileTextAsync } from './fileDiff';
 import { getFileSyntax } from './fileSyntax';
 import { compactRows, MAX_FILE_BYTES, MAX_FILE_LINES, RenderRow, startFileComparison } from './fileComparison';
@@ -37,6 +38,7 @@ export function createFileComparePanel(
       <div class="loading-spinner" aria-hidden="true"></div>
       <div id="loading-text">Reading files…</div><progress id="loading-progress" aria-label="Comparison progress"></progress>
     </div></main>
+    <footer id="statusbar" aria-label="File status"><div id="left-encoding"></div><div id="right-encoding"></div></footer>
     <script nonce="${nonce}" src="${asset('file-editor.js')}"></script></body></html>`;
   let generation = 0;
   let disposed = false;
@@ -56,15 +58,19 @@ export function createFileComparePanel(
     };
     try {
       await report('Reading files');
-      const documents = [left, right].map(uri => vscode.workspace.textDocuments.find(doc => doc.uri.toString() === uri.toString()));
-      const buffers = await Promise.all([left, right].map((uri, i) => documents[i]
-        ? Promise.resolve(Buffer.from(documents[i]!.getText(), 'utf8'))
-        : vscode.workspace.fs.readFile(uri).then(bytes => Buffer.from(bytes))));
+      // 구문 강조를 위해 openTextDocument로 연 문서는 VS Code 기본 인코딩으로 읽혀 한글이 깨질 수 있으므로,
+      // 저장되지 않은 변경이 있는 문서만 편집 중인 내용을 쓰고 나머지는 디스크 바이트를 판별해 쓴다.
+      const documents = [left, right].map(uri => vscode.workspace.textDocuments.find(doc => doc.isDirty && doc.uri.toString() === uri.toString()));
+      const decoded = await Promise.all([left, right].map((uri, i) => documents[i]
+        ? openDocumentText(documents[i]!, uri)
+        : vscode.workspace.fs.readFile(uri).then(bytes => ({ buf: Buffer.from(bytes), ...detectAndDecode(Buffer.from(bytes)) }))));
       if (disposed || current !== generation) return;
+      const buffers = decoded.map(item => item.buf);
       if (buffers.some(isBinary)) throw new Error('Binary files cannot be shown here. Use Open Original Diff.');
       if (buffers.some(buf => buf.length > MAX_FILE_BYTES)) throw new Error('Files over 20 MB cannot be shown here. Use Open Original Diff.');
+      const texts = decoded.map(item => item.text);
+      const encodings = decoded.map(item => item.encoding);
       const ext = path.extname(left.fsPath).slice(1).toLowerCase();
-      const texts = buffers.map(buf => buf.toString('utf8'));
       const lineCounts = texts.map(text => text.split(/\r\n?|\n/).length);
       if (lineCounts.some(count => count > MAX_FILE_LINES)) throw new Error('Files over 200,000 lines cannot be shown here. Use Open Original Diff.');
       const largeFile = buffers.some(buf => buf.length > 2 * 1024 * 1024) || lineCounts.some(count => count > 20000);
@@ -92,7 +98,7 @@ export function createFileComparePanel(
       if (disposed || current !== generation) return;
       await report('Displaying comparison');
       if (disposed || current !== generation) return;
-      void panel.webview.postMessage({ type: 'result', seq: current, rows, texts, syntax, largeFile, options: snapshot, left: left.fsPath, right: right.fsPath });
+      void panel.webview.postMessage({ type: 'result', seq: current, rows, texts, syntax, largeFile, encodings, options: snapshot, left: left.fsPath, right: right.fsPath });
     } catch (error) {
       if (!disposed && current === generation) void panel.webview.postMessage({
         type: 'error', seq: current, options: snapshot, message: error instanceof Error ? error.message : String(error),
@@ -116,4 +122,15 @@ export function createFileComparePanel(
     cancelComparison?.(); cached = undefined;
     disposed = true; generation++; listener.dispose(); themeListener?.dispose(); configListener?.dispose();
   });
+}
+
+async function openDocumentText(document: vscode.TextDocument, uri: vscode.Uri): Promise<{ buf: Buffer; text: string; encoding: string }> {
+  const text = document.getText();
+  // TextDocument.encoding은 VS Code 1.100 이후에만 있으므로, 없으면 디스크 바이트로 판별한다.
+  const id = (document as { encoding?: string }).encoding;
+  let encoding = id ? editorEncodingLabel(id) : 'UTF-8';
+  if (!id) {
+    try { encoding = detectAndDecode(Buffer.from(await vscode.workspace.fs.readFile(uri))).encoding; } catch { /* 저장되지 않은 문서 */ }
+  }
+  return { buf: Buffer.from(text, 'utf8'), text, encoding };
 }

@@ -259,6 +259,11 @@ window.addEventListener('message', async ({ data: message }) => {
   try {
     document.getElementById('left-name').textContent = message.left;
     document.getElementById('right-name').textContent = message.right;
+    ['left', 'right'].forEach((side, i) => {
+      const element = document.getElementById(`${side}-encoding`);
+      element.textContent = message.encodings?.[i] ?? '';
+      element.title = message.encodings?.[i] ? `Detected encoding: ${message.encodings[i]}` : '';
+    });
     document.getElementById('performance-note').textContent = message.largeFile ? 'Large file: syntax colors disabled for speed' : '';
     applyTheme(message.syntax); setSource(message.texts, message.syntax); renderDiff(message.rows);
   } catch (error) {

@@ -70,7 +70,7 @@ test('file panel inherits options, refreshes dirty documents, rejects binary and
   const posted = [], commands = [];
   const uri = name => ({ fsPath: name, toString: () => name });
   const left = uri('/left.ts'), right = uri('/right.ts');
-  const documents = [{ uri: left, getText: () => 'let x = 1; // old' }, { uri: right, getText: () => 'let x = 1; // new' }];
+  const documents = [{ uri: left, isDirty: true, getText: () => 'let x = 1; // old' }, { uri: right, isDirty: true, getText: () => 'let x = 1; // new' }];
   const vscode = {
     Uri: { joinPath: (base, ...parts) => uri([base.fsPath, ...parts].join('/')) },
     ViewColumn: { Active: 1 },
@@ -100,7 +100,7 @@ test('file panel inherits options, refreshes dirty documents, rejects binary and
   assert.equal(posted.at(-1).type, 'error');
   await receive({ type: 'original' });
   assert.equal(commands[0][0], 'vscode.diff');
-  documents.push({ uri: left, getText: () => 'same' }, { uri: right, getText: () => 'same' });
+  documents.push({ uri: left, isDirty: true, getText: () => 'same' }, { uri: right, isDirty: true, getText: () => 'same' });
   const start = posted.length;
   await Promise.all([receive({ type: 'reload' }), receive({ type: 'reload' })]);
   const results = posted.slice(start).filter(message => message.type === 'result');
@@ -235,4 +235,30 @@ test('batched comparison reports increasing row counts, yields and preserves syn
     assert.ok(updates.every((value, i) => i === 0 || value.completed > updates[i - 1].completed));
   }
   await assert.rejects(compareFileTextAsync(a, b, 'ts', options(true, true), () => { throw new Error('cancelled'); }), /cancelled/);
+});
+
+test('file panel decodes saved files from disk even if VS Code opened them as UTF-8', async () => {
+  let receive;
+  const posted = [];
+  const uri = name => ({ fsPath: name, toString: () => name });
+  const left = uri('/left.txt'), right = uri('/right.txt');
+  const cp949 = Buffer.from('c7d1b1db0a', 'hex'); // '한글\n'
+  const vscode = {
+    Uri: { joinPath: (base, ...parts) => uri([base.fsPath, ...parts].join('/')) },
+    ViewColumn: { Active: 1 },
+    window: { createWebviewPanel: () => ({
+      webview: { asWebviewUri: u => u.fsPath, cspSource: 'test',
+        onDidReceiveMessage: callback => { receive = callback; return { dispose() {} }; },
+        postMessage: message => posted.push(message) },
+      onDidDispose() {},
+    }) },
+    workspace: { textDocuments: [{ uri: left, isDirty: false, encoding: 'utf8', getText: () => cp949.toString('utf8') }],
+      fs: { readFile: async () => cp949 } },
+  };
+  const { createFileComparePanel } = load('src/filePanel.ts', vscode);
+  createFileComparePanel({ extensionUri: uri('/extension') }, left, right, options(true, true));
+  await receive({ type: 'toggle', option: 'comment' });
+  const result = posted.findLast(message => message.type === 'result');
+  assert.deepEqual([...result.texts], ['한글\n', '한글\n']);
+  assert.deepEqual([...result.encodings], ['CP949 (EUC-KR)', 'CP949 (EUC-KR)']);
 });

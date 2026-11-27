@@ -1,7 +1,14 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as vscode from 'vscode';
-import { CompareOptions, DEFAULT_COMPARE_OPTIONS, compareFolders, DiffNode } from './compare';
+import {
+  CompareOptions,
+  DEFAULT_COMPARE_OPTIONS,
+  compareFolders,
+  compareItem,
+  DiffNode,
+  DiffStatus,
+} from './compare';
 import { createFileComparePanel } from './filePanel';
 
 /** 좌우를 맞바꾼다. 비교 결과는 대칭이므로 onlyLeft/onlyRight만 뒤집으면 된다. */
@@ -54,10 +61,66 @@ function markCopied(nodes: DiffNode[], relPath: string): void {
   }
 }
 
+/** relPath까지 이어지는 노드 체인(루트 쪽부터). 경로가 트리에 없으면 null. */
+function findChain(nodes: DiffNode[], relPath: string): DiffNode[] | null {
+  const chain: DiffNode[] = [];
+  let level = nodes;
+  for (const segment of relPath.split('/')) {
+    const found = level.find((node) => node.name === segment);
+    if (!found) {
+      return null;
+    }
+    chain.push(found);
+    level = found.children ?? [];
+  }
+  return chain;
+}
+
+/**
+ * relPath 항목만 다시 비교한 결과(fresh, 양쪽 모두 없어졌으면 null)를 트리에 반영하고,
+ * 상태가 바뀐 조상 폴더 목록을 반환한다.
+ */
+function applyReloaded(
+  tree: DiffNode[],
+  relPath: string,
+  fresh: DiffNode | null
+): { relPath: string; status: DiffStatus }[] | null {
+  const chain = findChain(tree, relPath);
+  if (!chain) {
+    return null;
+  }
+  const target = chain.pop()!;
+  const siblings = chain.length > 0 ? chain[chain.length - 1].children! : tree;
+  const index = siblings.indexOf(target);
+  if (fresh) {
+    siblings[index] = fresh;
+  } else {
+    siblings.splice(index, 1);
+  }
+
+  const changed: { relPath: string; status: DiffStatus }[] = [];
+  for (let i = chain.length - 1; i >= 0; i--) {
+    const dir = chain[i];
+    if (dir.status === 'onlyLeft' || dir.status === 'onlyRight') {
+      break;
+    }
+    const status: DiffStatus = (dir.children ?? []).every((c) => c.status === 'same')
+      ? 'same'
+      : 'modified';
+    if (dir.status === status) {
+      break;
+    }
+    dir.status = status;
+    changed.push({ relPath: dir.relPath, status });
+  }
+  return changed;
+}
+
 interface WebviewMessage {
   type:
     | 'ready'
     | 'reload'
+    | 'reloadItem'
     | 'openDiff'
     | 'openFile'
     | 'changeRoot'
@@ -190,6 +253,41 @@ export function createComparePanel(
         return;
       }
       if (!message.relPath) {
+        return;
+      }
+      if (message.type === 'reloadItem') {
+        // 한쪽에만 있는 폴더 안의 항목이면 그 사이 반대쪽에 폴더가 생겼을 수 있으므로
+        // 가장 바깥의 한쪽 전용 조상 폴더부터 다시 비교한다.
+        const chain = findChain(currentTree, message.relPath);
+        const target =
+          chain?.find((n) => n.status === 'onlyLeft' || n.status === 'onlyRight')
+            ?.relPath ?? message.relPath;
+        let fresh: DiffNode | null;
+        try {
+          fresh = await compareItem(
+            leftRoot.fsPath,
+            rightRoot.fsPath,
+            target,
+            getExclude(),
+            options
+          );
+        } catch (err) {
+          vscode.window.showErrorMessage(
+            `Batch Compare: failed to reload ${target} — ${
+              err instanceof Error ? err.message : String(err)
+            }`
+          );
+          panel.webview.postMessage({ type: 'reloaded', relPath: target, ok: false });
+          return;
+        }
+        const ancestors = applyReloaded(currentTree, target, fresh);
+        panel.webview.postMessage({
+          type: 'reloaded',
+          relPath: target,
+          ok: ancestors !== null,
+          node: fresh,
+          ancestors: ancestors ?? [],
+        });
         return;
       }
       const leftUri = vscode.Uri.joinPath(leftRoot, ...message.relPath.split('/'));

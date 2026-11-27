@@ -11,6 +11,11 @@
         applyCopied(message.relPath);
       }
       hideLoading();
+    } else if (message.type === 'reloaded') {
+      if (message.ok) {
+        applyReloaded(message);
+      }
+      hideLoading();
     }
   });
 
@@ -236,23 +241,159 @@
         return;
       }
       dir.status = status;
-      const el = nodeElements.get(dir.relPath);
-      if (!el) {
-        continue;
-      }
-      el.dataset.status = status;
-      const row = el.querySelector(':scope > .row');
-      if (row) {
-        row.classList.remove(
-          'status-same',
-          'status-modified',
-          'status-onlyLeft',
-          'status-onlyRight'
-        );
-        row.classList.add('status-' + status);
+      setRowStatus(dir.relPath, status);
+    }
+  }
+
+  function setRowStatus(relPath, status) {
+    const el = nodeElements.get(relPath);
+    if (!el) {
+      return;
+    }
+    el.dataset.status = status;
+    const row = el.querySelector(':scope > .row');
+    if (row) {
+      row.classList.remove(
+        'status-same',
+        'status-modified',
+        'status-onlyLeft',
+        'status-onlyRight'
+      );
+      row.classList.add('status-' + status);
+    }
+  }
+
+  // 다시 그리기 전에 relPath 하위 항목의 색인을 지운다(사라진 항목이 남지 않도록).
+  function forgetSubtree(relPath) {
+    const prefix = relPath + '/';
+    for (const key of [...nodeElements.keys()]) {
+      if (key === relPath || key.startsWith(prefix)) {
+        nodeElements.delete(key);
+        nodeInfo.delete(key);
       }
     }
   }
+
+  // 이전에 보이던 폴더는 접힘 상태를 유지하고, 새로 나타난 폴더는
+  // 기본 모드(diff가 있는 경로만 펼침)를 따른다.
+  function applyCollapsedState(node, collapsed, known) {
+    if (!node.children || node.children.length === 0) {
+      return;
+    }
+    const el = nodeElements.get(node.relPath);
+    if (el) {
+      el.classList.toggle(
+        'collapsed',
+        known.has(node.relPath) ? collapsed.has(node.relPath) : node.status === 'same'
+      );
+    }
+    for (const child of node.children) {
+      applyCollapsedState(child, collapsed, known);
+    }
+  }
+
+  // 트리의 한 항목(node)을 같은 위치에 다시 그린다.
+  function rerenderNode(relPath, node, isLast, collapsed, known) {
+    const info = nodeInfo.get(relPath);
+    const el = nodeElements.get(relPath);
+    if (!info || !el) {
+      return;
+    }
+    forgetSubtree(relPath);
+    const fresh = renderNode(node, isLast, info.ancestorLines);
+    el.replaceWith(fresh);
+    applyCollapsedState(node, collapsed, known);
+  }
+
+  // 우클릭 메뉴의 Reload: 해당 항목만 다시 비교한 결과를 반영한다.
+  // message.node가 null이면 좌우 모두에서 사라진 항목이다.
+  function applyReloaded(message) {
+    const relPath = message.relPath;
+    const info = nodeInfo.get(relPath);
+    if (!info) {
+      return;
+    }
+    const collapsed = collapsedPaths();
+    const known = new Set(nodeElements.keys());
+    const slash = relPath.lastIndexOf('/');
+    const parentPath = slash >= 0 ? relPath.slice(0, slash) : null;
+    const parentInfo = parentPath !== null ? nodeInfo.get(parentPath) : null;
+    const siblings = parentInfo ? parentInfo.node.children : treeData;
+    const index = siblings.indexOf(info.node);
+    if (index < 0) {
+      return;
+    }
+
+    if (message.node) {
+      siblings[index] = message.node;
+      rerenderNode(relPath, message.node, info.isLast, collapsed, known);
+    } else {
+      siblings.splice(index, 1);
+      if (parentInfo && siblings.length === 0) {
+        // 마지막 자식이 사라지면 부모의 트위스티도 바뀌므로 부모를 다시 그린다.
+        rerenderNode(parentPath, parentInfo.node, parentInfo.isLast, collapsed, known);
+      } else {
+        const el = nodeElements.get(relPath);
+        forgetSubtree(relPath);
+        el?.remove();
+        if (info.isLast && siblings.length > 0) {
+          // 새로 마지막이 된 형제의 트리 연결선(└)을 고친다.
+          const last = siblings[siblings.length - 1];
+          rerenderNode(last.relPath, last, true, collapsed, known);
+        }
+      }
+    }
+
+    for (const { relPath: dirPath, status } of message.ancestors || []) {
+      const dirInfo = nodeInfo.get(dirPath);
+      if (dirInfo) {
+        dirInfo.node.status = status;
+      }
+      setRowStatus(dirPath, status);
+    }
+    restripe();
+  }
+
+  let contextMenuEl = null;
+
+  function closeContextMenu() {
+    if (contextMenuEl) {
+      contextMenuEl.remove();
+      contextMenuEl = null;
+    }
+  }
+
+  function showContextMenu(x, y, items) {
+    closeContextMenu();
+    const menu = document.createElement('div');
+    menu.className = 'context-menu';
+    for (const item of items) {
+      const entry = document.createElement('div');
+      entry.className = 'context-menu-item';
+      entry.textContent = item.label;
+      entry.addEventListener('click', () => {
+        closeContextMenu();
+        item.action();
+      });
+      menu.appendChild(entry);
+    }
+    document.body.appendChild(menu);
+    const rect = menu.getBoundingClientRect();
+    const left = Math.min(x, window.innerWidth - rect.width - 4);
+    const top = Math.min(y, window.innerHeight - rect.height - 4);
+    menu.style.left = Math.max(0, left) + 'px';
+    menu.style.top = Math.max(0, top) + 'px';
+    contextMenuEl = menu;
+  }
+
+  document.addEventListener('click', closeContextMenu);
+  document.addEventListener('scroll', closeContextMenu, true);
+  window.addEventListener('blur', closeContextMenu);
+  document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape') {
+      closeContextMenu();
+    }
+  });
 
   // 경로를 구분자(/ 또는 \)를 유지한 채 조각으로 나눈다.
   function tokenizePath(p) {
@@ -336,6 +477,20 @@
     row.appendChild(renderGutter(node));
     row.appendChild(renderCell(node, isLast, ancestorLines, 'right', hasChildren));
     container.appendChild(row);
+
+    row.addEventListener('contextmenu', (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      showContextMenu(event.clientX, event.clientY, [
+        {
+          label: 'Reload',
+          action: () => {
+            showLoading();
+            vscode.postMessage({ type: 'reloadItem', relPath: node.relPath });
+          },
+        },
+      ]);
+    });
 
     if (hasChildren) {
       const childrenEl = document.createElement('div');

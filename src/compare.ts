@@ -112,71 +112,111 @@ async function compareDir(
     if (exclude(name, childRelPath)) {
       continue;
     }
-    const left = leftEntries.get(name);
-    const right = rightEntries.get(name);
-
-    if (left && right) {
-      if (left.isDirectory() && right.isDirectory()) {
-        const children = await compareDir(
-          path.join(leftDir, name),
-          path.join(rightDir, name),
-          childRelPath,
-          exclude,
-          options
-        );
-        const allSame = children.every((c) => c.status === 'same');
-        nodes.push({
-          name,
-          relPath: childRelPath,
-          isDirectory: true,
-          status: allSame ? 'same' : 'modified',
-          children,
-        });
-      } else if (!left.isDirectory() && !right.isDirectory()) {
-        const equal = await filesEqual(
-          path.join(leftDir, name),
-          path.join(rightDir, name),
-          options
-        );
-        nodes.push({
-          name,
-          relPath: childRelPath,
-          isDirectory: false,
-          status: equal ? 'same' : 'modified',
-        });
-      } else {
-        // One side is a directory, the other a file — different kinds
-        nodes.push({
-          name,
-          relPath: childRelPath,
-          isDirectory: false,
-          status: 'modified',
-        });
-      }
-    } else {
-      const entry = (left ?? right)!;
-      const side: DiffStatus = left ? 'onlyLeft' : 'onlyRight';
-      if (entry.isDirectory()) {
-        const dir = path.join(left ? leftDir : rightDir, name);
-        nodes.push({
-          name,
-          relPath: childRelPath,
-          isDirectory: true,
-          status: side,
-          children: await scanOneSide(dir, childRelPath, side, exclude),
-        });
-      } else {
-        nodes.push({
-          name,
-          relPath: childRelPath,
-          isDirectory: false,
-          status: side,
-        });
-      }
-    }
+    nodes.push(
+      await compareEntry(
+        leftDir,
+        rightDir,
+        name,
+        childRelPath,
+        leftEntries.get(name),
+        rightEntries.get(name),
+        exclude,
+        options
+      )
+    );
   }
 
   return sortNodes(nodes);
+}
+
+/**
+ * relPath 하나(파일 또는 폴더)만 다시 비교한다. 좌우 어디에도 없거나 제외 대상이면
+ * null을 반환한다.
+ */
+export async function compareItem(
+  leftRoot: string,
+  rightRoot: string,
+  relPath: string,
+  exclude: string[],
+  options: CompareOptions = DEFAULT_COMPARE_OPTIONS
+): Promise<DiffNode | null> {
+  const isExcluded = createExcludeMatcher(exclude);
+  const segments = relPath.split('/');
+  const name = segments.pop()!;
+  const leftDir = path.join(leftRoot, ...segments);
+  const rightDir = path.join(rightRoot, ...segments);
+  if (isExcluded(name, relPath)) {
+    return null;
+  }
+  const [leftEntries, rightEntries] = await Promise.all([
+    readEntries(leftDir),
+    readEntries(rightDir),
+  ]);
+  const left = leftEntries.get(name);
+  const right = rightEntries.get(name);
+  if (!left && !right) {
+    return null;
+  }
+  return compareEntry(leftDir, rightDir, name, relPath, left, right, isExcluded, options);
+}
+
+async function compareEntry(
+  leftDir: string,
+  rightDir: string,
+  name: string,
+  childRelPath: string,
+  left: fs.Dirent | undefined,
+  right: fs.Dirent | undefined,
+  exclude: ExcludeMatcher,
+  options: CompareOptions
+): Promise<DiffNode> {
+  if (left && right) {
+    if (left.isDirectory() && right.isDirectory()) {
+      const children = await compareDir(
+        path.join(leftDir, name),
+        path.join(rightDir, name),
+        childRelPath,
+        exclude,
+        options
+      );
+      const allSame = children.every((c) => c.status === 'same');
+      return {
+        name,
+        relPath: childRelPath,
+        isDirectory: true,
+        status: allSame ? 'same' : 'modified',
+        children,
+      };
+    }
+    if (!left.isDirectory() && !right.isDirectory()) {
+      const equal = await filesEqual(
+        path.join(leftDir, name),
+        path.join(rightDir, name),
+        options
+      );
+      return {
+        name,
+        relPath: childRelPath,
+        isDirectory: false,
+        status: equal ? 'same' : 'modified',
+      };
+    }
+    // One side is a directory, the other a file — different kinds
+    return { name, relPath: childRelPath, isDirectory: false, status: 'modified' };
+  }
+  const entry = (left ?? right)!;
+  const side: DiffStatus = left ? 'onlyLeft' : 'onlyRight';
+  if (entry.isDirectory()) {
+    const dir = path.join(left ? leftDir : rightDir, name);
+    return {
+      name,
+      relPath: childRelPath,
+      isDirectory: true,
+      status: side,
+      children: await scanOneSide(dir, childRelPath, side, exclude),
+    };
+  }
+  return { name, relPath: childRelPath, isDirectory: false, status: side };
 }
 
 async function scanOneSide(
